@@ -124,18 +124,18 @@
             overflow: hidden;
             position: relative;
             background: #141416;
-            touch-action: none; /* Bloquea gestos nativos del navegador */
+            touch-action: none;
         }
 
         #pan-zoom-canvas {
             position: absolute;
-            width: 3000px;
-            height: 3000px;
+            width: 4000px;
+            height: 4000px;
             top: 0;
             left: 0;
             background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1.5px, transparent 0);
             background-size: 30px 30px;
-            transform-origin: 0 0; /* Cambio crítico para transformaciones matemáticas estables */
+            transform-origin: 0 0;
             will-change: transform;
         }
 
@@ -143,19 +143,19 @@
             position: absolute;
             cursor: grab;
             touch-action: none;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
-            outline: 1px solid rgba(255,255,255,0.15);
-            outline-offset: -1px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+            /* Borde inicial nítido para piezas sueltas */
+            border: 1px solid rgba(255, 255, 255, 0.25);
         }
         .puzzle-piece:active { cursor: grabbing; z-index: 9999 !important; }
 
         @keyframes flash-union {
             0% { filter: brightness(1); box-shadow: 0 0 0px var(--accent-color); }
-            50% { filter: brightness(1.5); box-shadow: 0 0 25px var(--accent-color); }
-            100% { filter: brightness(1); box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
+            50% { filter: brightness(1.4); box-shadow: 0 0 20px var(--accent-color); }
+            100% { filter: brightness(1); box-shadow: 0 4px 8px rgba(0,0,0,0.4); }
         }
         .flash-active {
-            animation: flash-union 0.35s ease-out;
+            animation: flash-union 0.3s ease-out;
         }
 
         #victory-layer {
@@ -199,6 +199,7 @@
                     <option value="4" selected>4 x 4 (Medio)</option>
                     <option value="5">5 x 5 (Difícil)</option>
                     <option value="8">8 x 8 (Experto)</option>
+                    <option value="12">12 x 12 (Leyenda)</option>
                 </select>
             </div>
             <button id="btn-source-api" class="btn">Buscar Imagen Online</button>
@@ -228,7 +229,7 @@
             <div id="pan-zoom-canvas"></div>
         </div>
 
-        <div id="zoom-indicator">Usa dos dedos (pinch) para Zoom | Un dedo para mover fondo o piezas</div>
+        <div id="zoom-indicator">Pinch con dos dedos para Ultra Zoom Out | Mueve el fondo para navegar</div>
     </div>
 
     <div id="victory-layer">
@@ -248,7 +249,6 @@
             moves: 0,
             startTime: null,
             timerInterval: null,
-            // Coordenadas de la cámara/lienzo
             zoom: 1,
             panX: 0,
             panY: 0
@@ -316,23 +316,22 @@
             showScreen('screen-preview');
         }
 
-        // MOTOR RECONOCEDOR DE GESTOS AVANZADOS (PINCH ZOOM & MULTITOUCH PAN)
         function setupAdvancedGestures() {
-            let activePointers = {}; // Registro de dedos tocando la pantalla
+            let activePointers = {}; 
             let isDraggingBg = false;
             let startPanX = 0, startPanY = 0;
             let startTouchX = 0, startTouchY = 0;
             let startPinchDist = 0;
             let startZoom = 1;
 
-            // --- Soporte de Escritorio (Rueda del ratón) ---
             viewport.addEventListener('wheel', (e) => {
                 e.preventDefault();
-                const zoomFactor = 0.08;
+                const zoomFactor = state.zoom * 0.15;
                 let nextZoom = e.deltaY < 0 ? state.zoom + zoomFactor : state.zoom - zoomFactor;
-                nextZoom = Math.max(0.3, Math.min(nextZoom, 3));
                 
-                // Centrar zoom en el puntero del ratón
+                // MEJORA: Aumento extremo de límite de zoom-out (mínimo 0.05)
+                nextZoom = Math.max(0.05, Math.min(nextZoom, 3));
+                
                 const rect = viewport.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
@@ -344,12 +343,10 @@
                 updateCanvasTransform();
             }, { passive: false });
 
-            // --- Motor Unificado de Punteros (Móvil + Mouse) ---
             viewport.addEventListener('pointerdown', (e) => {
                 activePointers[e.pointerId] = e;
                 const pointerCount = Object.keys(activePointers).length;
 
-                // Si pulsamos en el fondo vacío o el canvas puro, arrastramos el mapa
                 if (e.target === viewport || e.target === canvas) {
                     if (pointerCount === 1) {
                         isDraggingBg = true;
@@ -360,14 +357,12 @@
                     }
                 }
 
-                // Configuración inicial de Pinch Zoom al meter el segundo dedo
                 if (pointerCount === 2) {
-                    isDraggingBg = false; // Cancelamos arrastre simple
+                    isDraggingBg = false; 
                     const pointers = Object.values(activePointers);
                     startPinchDist = Math.hypot(pointers[0].clientX - pointers[1].clientX, pointers[0].clientY - pointers[1].clientY);
                     startZoom = state.zoom;
                     
-                    // Guardar el centro del pinch para hacer zoom centrado entre los dos dedos
                     startTouchX = (pointers[0].clientX + pointers[1].clientX) / 2;
                     startTouchY = (pointers[0].clientY + pointers[1].clientY) / 2;
                     startPanX = state.panX;
@@ -377,12 +372,11 @@
 
             viewport.addEventListener('pointermove', (e) => {
                 if (!activePointers[e.pointerId]) return;
-                activePointers[e.pointerId] = e; // Actualizar coordenadas del dedo actual
+                activePointers[e.pointerId] = e; 
                 
                 const pointers = Object.values(activePointers);
                 const pointerCount = pointers.length;
 
-                // 1. Paneo fluido continuo con un dedo
                 if (isDraggingBg && pointerCount === 1) {
                     const dx = e.clientX - startTouchX;
                     const dy = e.clientY - startTouchY;
@@ -391,17 +385,17 @@
                     updateCanvasTransform();
                 }
 
-                // 2. Pinch to Zoom real con dos dedos geométricos
                 if (pointerCount === 2) {
                     const currentDist = Math.hypot(pointers[0].clientX - pointers[1].clientX, pointers[0].clientY - pointers[1].clientY);
                     const scaleChange = currentDist / startPinchDist;
                     let nextZoom = startZoom * scaleChange;
-                    nextZoom = Math.max(0.3, Math.min(nextZoom, 3));
+                    
+                    // MEJORA: Límite extremo también para gestos táctiles (0.05)
+                    nextZoom = Math.max(0.05, Math.min(nextZoom, 3));
 
                     const midX = (pointers[0].clientX + pointers[1].clientX) / 2;
                     const midY = (pointers[0].clientY + pointers[1].clientY) / 2;
 
-                    // Ajustar paneo matemático para que la imagen no se desplace de las puntas de los dedos
                     state.panX = midX - (midX - startPanX) * (nextZoom / startZoom);
                     state.panY = midY - (midY - startPanY) * (nextZoom / startZoom);
                     state.zoom = nextZoom;
@@ -426,15 +420,14 @@
             canvas.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
         }
 
-        // MOTOR DE JUEGO
         function initGameplay() {
             state.size = parseInt(document.getElementById('cfg-size').value);
             state.moves = 0;
             
-            // Centrar el lienzo de 3000x3000px en la pantalla del móvil automáticamente al arrancar
-            state.zoom = 0.8;
-            state.panX = (window.innerWidth - (3000 * state.zoom)) / 2;
-            state.panY = (window.innerHeight - (600 * state.zoom)) / 3;
+            // Iniciar con vista un poco alejada estratégica para ver las piezas dispersas
+            state.zoom = 0.6;
+            state.panX = (window.innerWidth - (4000 * state.zoom)) / 2;
+            state.panY = (window.innerHeight - (1200 * state.zoom)) / 3;
             updateCanvasTransform();
             
             document.getElementById('txt-moves').textContent = "0";
@@ -452,8 +445,9 @@
             const boardSize = 600; 
             const pSize = boardSize / state.size;
             
-            const offsetX = (3000 - boardSize) / 2;
-            const offsetY = (3000 - boardSize) / 2;
+            // Tablero en el centro del súper lienzo expandido de 4000x4000
+            const offsetX = (4000 - boardSize) / 2;
+            const offsetY = (4000 - boardSize) / 2;
 
             state.pieces = [];
             state.groups = [];
@@ -472,14 +466,14 @@
                     const targetX = offsetX + (c * pSize);
                     const targetY = offsetY + (r * pSize);
 
-                    // Dispersión controlada a los costados y abajo del tablero central
+                    // Dispersión lejana para aprovechar el nuevo zoom panorámico
                     let randomX, randomY;
                     if(Math.random() > 0.5){
-                        randomX = offsetX - 350 + Math.random() * 200;
+                        randomX = offsetX - 600 + Math.random() * 300;
                     } else {
-                        randomX = offsetX + boardSize + 100 + Math.random() * 200;
+                        randomX = offsetX + boardSize + 300 + Math.random() * 300;
                     }
-                    randomY = offsetY - 100 + Math.random() * (boardSize + 200);
+                    randomY = offsetY - 300 + Math.random() * (boardSize + 600);
                     
                     piece.style.left = `${randomX}px`;
                     piece.style.top = `${randomY}px`;
@@ -510,6 +504,7 @@
             const groupIdx = state.groups.findIndex(g => g.includes(clickedPiece.id));
             const groupIds = state.groups[groupIdx];
 
+            // Traer el grupo completo al frente
             groupIds.forEach(id => canvas.appendChild(state.pieces[id].el));
 
             const startX = e.clientX;
@@ -517,7 +512,6 @@
             const initialPos = groupIds.map(id => ({ id: id, x: state.pieces[id].x, y: state.pieces[id].y }));
 
             function onPointerMove(ev) {
-                // El arrastre de las piezas ahora respeta perfectamente el nivel de zoom dinámico
                 const dx = (ev.clientX - startX) / state.zoom;
                 const dy = (ev.clientY - startY) / state.zoom;
 
@@ -591,12 +585,13 @@
                 if (unionFound) break;
             }
 
+            // CORRECCIÓN CRÍTICA: El efecto flash SOLO se dispara aquí si unionFound fue exitoso
             if (unionFound) {
                 const finalGroup = state.groups.find(g => g.includes(currentGroup[0]));
                 finalGroup.forEach(id => {
                     const el = state.pieces[id].el;
                     el.classList.remove('flash-active');
-                    void el.offsetWidth; 
+                    void el.offsetWidth; // Forzar reflow eléctrico del DOM
                     el.classList.add('flash-active');
                 });
                 hideInternalBorders(finalGroup);
@@ -617,7 +612,7 @@
                     p.el.style.left = `${p.tx}px`;
                     p.el.style.top = `${p.ty}px`;
                     p.el.style.boxShadow = "none";
-                    p.el.style.outline = "none"; 
+                    p.el.style.border = "none"; // Eliminar bordes por completo al encajar en la meta final
                 });
             }
 
@@ -631,6 +626,7 @@
             }
         }
 
+        // CORRECCIÓN CRÍTICA DE BORDES: Manejo unificado de la propiedad border para evitar remanentes visuales
         function hideInternalBorders(groupIds) {
             groupIds.forEach(id1 => {
                 const p1 = state.pieces[id1];
@@ -644,11 +640,11 @@
                     if (p1.r === p2.r && p1.c + 1 === p2.c) rightMatch = true;
                 });
 
-                p1.el.style.outline = "none";
-                p1.el.style.borderTop = topMatch ? "none" : "1px solid rgba(255,255,255,0.2)";
-                p1.el.style.borderBottom = bottomMatch ? "none" : "1px solid rgba(255,255,255,0.2)";
-                p1.el.style.borderLeft = leftMatch ? "none" : "1px solid rgba(255,255,255,0.2)";
-                p1.el.style.borderRight = rightMatch ? "none" : "1px solid rgba(255,255,255,0.2)";
+                // Si hay un vecino acoplado en ese lado, el borde se vuelve totalmente transparente e invisible
+                p1.el.style.borderTop = topMatch ? "1px solid transparent" : "1px solid rgba(255,255,255,0.25)";
+                p1.el.style.borderBottom = bottomMatch ? "1px solid transparent" : "1px solid rgba(255,255,255,0.25)";
+                p1.el.style.borderLeft = leftMatch ? "1px solid transparent" : "1px solid rgba(255,255,255,0.25)";
+                p1.el.style.borderRight = rightMatch ? "1px solid transparent" : "1px solid rgba(255,255,255,0.25)";
             });
         }
 
