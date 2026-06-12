@@ -50,7 +50,6 @@
         .screen.active { display: flex; }
 
         h1 { font-size: 2rem; margin-bottom: 15px; text-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-        h2 { font-size: 1.4rem; margin-bottom: 10px; }
 
         .card {
             background: var(--surface-color);
@@ -69,7 +68,7 @@
             flex-direction: column;
             gap: 4px;
         }
-        label { font-size: 0.85rem; color: #aaa; }
+        label { font-size: 0.85rem; color: #aaa; font-weight: bold; }
         select, input[type="file"] {
             padding: 10px;
             border-radius: 8px;
@@ -96,13 +95,12 @@
         .btn-secondary { background: #333; color: #fff; }
         .btn-success { background: #4caf50; color: #fff; }
 
-        /* Contenedor Unificado de Preview / Cámara */
         .preview-box-container {
             width: 100%;
-            max-width: 280px;
+            max-width: 260px;
             aspect-ratio: 1/1;
             position: relative;
-            margin: 10px auto;
+            margin: 5px auto;
             border-radius: var(--border-radius);
             overflow: hidden;
             box-shadow: 0 8px 20px rgba(0,0,0,0.5);
@@ -116,10 +114,9 @@
             position: absolute;
             top: 0; left: 0;
         }
+        #webcam { display: none; transform: scaleX(-1); }
 
-        #webcam { display: none; transform: scaleX(-1); /* Efecto espejo natural */ }
-
-        /* ÁREA DE JUEGO (REPARADA PARA EVITAR PARPADEOS) */
+        /* ÁREA DE JUEGO ULTRA-ESTABLE */
         #game-header {
             width: 100%;
             position: absolute;
@@ -128,9 +125,8 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
-            z-index: 1000;
-            backface-visibility: hidden;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+            z-index: 10000;
         }
 
         #viewport {
@@ -138,24 +134,23 @@
             height: 100vh;
             overflow: hidden;
             position: relative;
-            background: #141416;
+            background: #131315;
             touch-action: none;
         }
 
+        /* Optimizado a 2000px para eliminar parpadeos por completo */
         #pan-zoom-canvas {
             position: absolute;
-            width: 4000px;
-            height: 4000px;
-            top: 0;
-            left: 0;
-            background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1.5px, transparent 0);
+            width: 2000px;
+            height: 2000px;
+            top: 0; left: 0;
+            background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1.5px, transparent 0);
             background-size: 30px 30px;
             transform-origin: 0 0;
-            /* Anti-parpadeo por hardware */
             will-change: transform;
             transform: translate3d(0,0,0);
-            backface-visibility: hidden;
             -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
         }
 
         .puzzle-piece {
@@ -164,10 +159,10 @@
             touch-action: none;
             box-shadow: 0 4px 8px rgba(0,0,0,0.4);
             border: 1px solid rgba(255, 255, 255, 0.25);
-            /* Forzar comportamiento de textura nativa */
+            will-change: top, left;
             transform: translate3d(0,0,0);
-            backface-visibility: hidden;
             -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
         }
         .puzzle-piece:active { cursor: grabbing; z-index: 99999 !important; }
 
@@ -176,9 +171,7 @@
             50% { filter: brightness(1.4); box-shadow: 0 0 20px var(--accent-color); }
             100% { filter: brightness(1); box-shadow: 0 4px 8px rgba(0,0,0,0.4); }
         }
-        .flash-active {
-            animation: flash-union 0.3s ease-out;
-        }
+        .flash-active { animation: flash-union 0.3s ease-out; }
 
         #victory-layer {
             position: fixed;
@@ -196,17 +189,16 @@
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0,0,0,0.7);
-            padding: 6px 16px;
+            background: rgba(0,0,0,0.85);
+            padding: 8px 18px;
             border-radius: 20px;
             font-size: 0.8rem;
             pointer-events: none;
-            color: #ccc;
-            z-index: 1000;
+            color: #eee;
+            z-index: 10000;
             text-align: center;
             width: 90%;
-            max-width: 360px;
-            backface-visibility: hidden;
+            max-width: 380px;
         }
     </style>
 </head>
@@ -215,14 +207,22 @@
     <div id="screen-menu" class="screen active">
         <h1>Puzzle Master Pro</h1>
         <div class="card">
+            
             <div class="control-group">
-                <label>Dificultad</label>
+                <label>Modo de Juego</label>
+                <select id="cfg-mode">
+                    <option value="libre" selected>Lienzo Libre (Clásico)</option>
+                    <option value="intercambio">Intercambio Fijo (Estilo Solitario)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Dificultad (Cuadrícula)</label>
                 <select id="cfg-size">
                     <option value="3">3 x 3 (Fácil)</option>
                     <option value="4" selected>4 x 4 (Medio)</option>
                     <option value="5">5 x 5 (Difícil)</option>
                     <option value="8">8 x 8 (Experto)</option>
-                    <option value="12">12 x 12 (Leyenda)</option>
                 </select>
             </div>
             
@@ -252,7 +252,7 @@
             <div id="pan-zoom-canvas"></div>
         </div>
 
-        <div id="zoom-indicator">Pinch para Ultra Zoom | Arrastra el fondo para mover la cámara</div>
+        <div id="zoom-indicator">Cargando modo...</div>
     </div>
 
     <div id="victory-layer">
@@ -263,6 +263,7 @@
 
     <script>
         const state = {
+            mode: 'libre', // 'libre' o 'intercambio'
             size: 4,
             imgSrc: 'https://picsum.photos/600/600',
             pieces: [], 
@@ -280,6 +281,7 @@
         const viewport = document.getElementById('viewport');
         const video = document.getElementById('webcam');
         const previewImg = document.getElementById('preview-img');
+        const zoomIndicator = document.getElementById('zoom-indicator');
 
         document.addEventListener('DOMContentLoaded', () => {
             setupMenuEvents();
@@ -287,7 +289,6 @@
         });
 
         function setupMenuEvents() {
-            // Cargar imagen de internet e impactar directo en la vista inferior
             document.getElementById('btn-source-api').addEventListener('click', () => {
                 closeWebcam();
                 state.imgSrc = `https://picsum.photos/800/800?sig=${Math.floor(Math.random()*1000)}`;
@@ -302,39 +303,31 @@
                 }
             });
 
-            // Flujo de Cámara Seguro y Visible integrado en la caja de preview
             document.getElementById('btn-source-cam').addEventListener('click', async () => {
                 try {
                     state.streamObject = await navigator.mediaDevices.getUserMedia({ 
                         video: { facingMode: "environment", width: 600, height: 600 } 
                     });
                     video.srcObject = state.streamObject;
-                    
-                    // Intercambio visual: Apagar foto, encender video en vivo
                     previewImg.style.display = 'none';
                     video.style.display = 'block';
                     document.getElementById('btn-snap').style.display = 'block';
                 } catch(e) { 
-                    alert("Error: Verifica que diste permisos y que ninguna otra app use la cámara."); 
+                    alert("Por favor, asegúrate de dar permisos a la cámara."); 
                 }
             });
 
-            // Botón para congelar y capturar el cuadro de video
             document.getElementById('btn-snap').addEventListener('click', () => {
                 if (!state.streamObject) return;
-                
                 const canvasSnap = document.createElement('canvas');
                 canvasSnap.width = 600; canvasSnap.height = 600;
                 const ctx = canvasSnap.getContext('2d');
-                
-                // Conservar proporción cuadrada perfecta
                 const min = Math.min(video.videoWidth, video.videoHeight);
-                ctx.translate(600, 0); ctx.scale(-1, 1); // Despejar el efecto espejo al guardar
+                ctx.translate(600, 0); ctx.scale(-1, 1);
                 ctx.drawImage(video, (video.videoWidth-min)/2, (video.videoHeight-min)/2, min, min, 0, 0, 600, 600);
                 
                 state.imgSrc = canvasSnap.toDataURL('image/jpeg');
                 previewImg.src = state.imgSrc;
-                
                 closeWebcam();
             });
 
@@ -342,14 +335,17 @@
             document.getElementById('btn-game-quit').addEventListener('click', () => {
                 stopTimer();
                 if(document.exitFullscreen) document.exitFullscreen().catch(()=>{});
-                document.getElementById('screen-menu').classList.add('active');
-                document.getElementById('screen-game').classList.remove('active');
+                showMenu();
             });
             document.getElementById('btn-victory-close').addEventListener('click', () => {
                 document.getElementById('victory-layer').style.display = 'none';
-                document.getElementById('screen-menu').classList.add('active');
-                document.getElementById('screen-game').classList.remove('active');
+                showMenu();
             });
+        }
+
+        function showMenu() {
+            document.getElementById('screen-menu').classList.add('active');
+            document.getElementById('screen-game').classList.remove('active');
         }
 
         function closeWebcam() {
@@ -371,20 +367,16 @@
             let startZoom = 1;
 
             viewport.addEventListener('wheel', (e) => {
+                if (state.mode === 'intercambio') return; // Bloquear zoom en modo intercambio
                 e.preventDefault();
                 const zoomFactor = state.zoom * 0.15;
                 let nextZoom = e.deltaY < 0 ? state.zoom + zoomFactor : state.zoom - zoomFactor;
-                
-                nextZoom = Math.max(0.04, Math.min(nextZoom, 3));
+                nextZoom = Math.max(0.1, Math.min(nextZoom, 3));
                 
                 const rect = viewport.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
-                
-                state.panX = mouseX - (mouseX - state.panX) * (nextZoom / state.zoom);
-                state.panY = mouseY - (mouseY - state.panY) * (nextZoom / state.zoom);
+                state.panX = (e.clientX - rect.left) - ((e.clientX - rect.left) - state.panX) * (nextZoom / state.zoom);
+                state.panY = (e.clientY - rect.top) - ((e.clientY - rect.top) - state.panY) * (nextZoom / state.zoom);
                 state.zoom = nextZoom;
-                
                 updateCanvasTransform();
             }, { passive: false });
 
@@ -392,50 +384,42 @@
                 activePointers[e.pointerId] = e;
                 const pointerCount = Object.keys(activePointers).length;
 
-                if (e.target === viewport || e.target === canvas) {
+                if ((e.target === viewport || e.target === canvas) && state.mode === 'libre') {
                     if (pointerCount === 1) {
                         isDraggingBg = true;
-                        startPanX = state.panX;
-                        startPanY = state.panY;
-                        startTouchX = e.clientX;
-                        startTouchY = e.clientY;
+                        startPanX = state.panX; startPanY = state.panY;
+                        startTouchX = e.clientX; startTouchY = e.clientY;
                     }
                 }
 
-                if (pointerCount === 2) {
+                if (pointerCount === 2 && state.mode === 'libre') {
                     isDraggingBg = false; 
                     const pointers = Object.values(activePointers);
                     startPinchDist = Math.hypot(pointers[0].clientX - pointers[1].clientX, pointers[0].clientY - pointers[1].clientY);
                     startZoom = state.zoom;
-                    
                     startTouchX = (pointers[0].clientX + pointers[1].clientX) / 2;
                     startTouchY = (pointers[0].clientY + pointers[1].clientY) / 2;
-                    startPanX = state.panX;
-                    startPanY = state.panY;
+                    startPanX = state.panX; startPanY = state.panY;
                 }
             });
 
             viewport.addEventListener('pointermove', (e) => {
-                if (!activePointers[e.pointerId]) return;
+                if (!activePointers[e.pointerId] || state.mode === 'intercambio') return;
                 activePointers[e.pointerId] = e; 
                 
                 const pointers = Object.values(activePointers);
                 const pointerCount = pointers.length;
 
                 if (isDraggingBg && pointerCount === 1) {
-                    const dx = e.clientX - startTouchX;
-                    const dy = e.clientY - startTouchY;
-                    state.panX = startPanX + dx;
-                    state.panY = startPanY + dy;
+                    state.panX = startPanX + (e.clientX - startTouchX);
+                    state.panY = startPanY + (e.clientY - startTouchY);
                     updateCanvasTransform();
                 }
 
                 if (pointerCount === 2) {
                     const currentDist = Math.hypot(pointers[0].clientX - pointers[1].clientX, pointers[0].clientY - pointers[1].clientY);
-                    const scaleChange = currentDist / startPinchDist;
-                    let nextZoom = startZoom * scaleChange;
-                    
-                    nextZoom = Math.max(0.04, Math.min(nextZoom, 3));
+                    let nextZoom = startZoom * (currentDist / startPinchDist);
+                    nextZoom = Math.max(0.1, Math.min(nextZoom, 3));
 
                     const midX = (pointers[0].clientX + pointers[1].clientX) / 2;
                     const midY = (pointers[0].clientY + pointers[1].clientY) / 2;
@@ -443,7 +427,6 @@
                     state.panX = midX - (midX - startPanX) * (nextZoom / startZoom);
                     state.panY = midY - (midY - startPanY) * (nextZoom / startZoom);
                     state.zoom = nextZoom;
-                    
                     updateCanvasTransform();
                 }
             });
@@ -452,7 +435,6 @@
                 delete activePointers[e.pointerId];
                 if (Object.keys(activePointers).length < 1) isDraggingBg = false;
             };
-
             viewport.addEventListener('pointerup', removePointer);
             viewport.addEventListener('pointercancel', removePointer);
             viewport.addEventListener('pointerleave', removePointer);
@@ -465,14 +447,23 @@
         function initGameplay() {
             closeWebcam();
             state.size = parseInt(document.getElementById('cfg-size').value);
+            state.mode = document.getElementById('cfg-mode').value;
             state.moves = 0;
-            
-            state.zoom = 0.5;
-            state.panX = (window.innerWidth - (4000 * state.zoom)) / 2;
-            state.panY = (window.innerHeight - (1200 * state.zoom)) / 3;
-            updateCanvasTransform();
-            
             document.getElementById('txt-moves').textContent = "0";
+            
+            if (state.mode === 'libre') {
+                zoomIndicator.innerHTML = "Lienzo Libre: Un dedo mueve fondo/piezas | Dos dedos controlan Zoom";
+                state.zoom = 0.6;
+                state.panX = (window.innerWidth - (2000 * state.zoom)) / 2;
+                state.panY = (window.innerHeight - (600 * state.zoom)) / 3;
+            } else {
+                zoomIndicator.innerHTML = "Modo Intercambio: Arrastra una pieza sobre otra para permutarlas";
+                // Centrado matemático perfecto del tablero fijo
+                state.zoom = Math.min(window.innerWidth / 620, window.innerHeight / 720, 1);
+                state.panX = (window.innerWidth - (600 * state.zoom)) / 2;
+                state.panY = (window.innerHeight - (600 * state.zoom)) / 2 + 30;
+            }
+            updateCanvasTransform();
             
             const docEl = document.documentElement;
             if(docEl.requestFullscreen) docEl.requestFullscreen().catch(()=>{});
@@ -489,12 +480,14 @@
             const boardSize = 600; 
             const pSize = boardSize / state.size;
             
-            const offsetX = (4000 - boardSize) / 2;
-            const offsetY = (4000 - boardSize) / 2;
+            // Si es libre usa el centro del lienzo de 2000px, si es intercambio empieza en (0,0) del canvas
+            const offsetX = state.mode === 'libre' ? (2000 - boardSize) / 2 : 0;
+            const offsetY = state.mode === 'libre' ? (2000 - boardSize) / 2 : 0;
 
             state.pieces = [];
             state.groups = [];
 
+            // 1. Crear piezas en sus posiciones objetivo correctas
             let index = 0;
             for(let r=0; r<state.size; r++) {
                 for(let c=0; c<state.size; c++) {
@@ -509,29 +502,45 @@
                     const targetX = offsetX + (c * pSize);
                     const targetY = offsetY + (r * pSize);
 
-                    let randomX, randomY;
-                    if(Math.random() > 0.5){
-                        randomX = offsetX - 700 + Math.random() * 400;
-                    } else {
-                        randomX = offsetX + boardSize + 300 + Math.random() * 400;
-                    }
-                    randomY = offsetY - 400 + Math.random() * (boardSize + 800);
-                    
-                    piece.style.left = `${randomX}px`;
-                    piece.style.top = `${randomY}px`;
-                    piece.dataset.id = index;
-                    canvas.appendChild(piece);
-
                     state.pieces.push({
                         el: piece, id: index,
                         r: r, c: c,
                         tx: targetX, ty: targetY,
-                        x: randomX, y: randomY
+                        x: targetX, y: targetY // Inicialmente asignados aquí
                     });
-
                     state.groups.push([index]);
                     index++;
                 }
+            }
+
+            // 2. Dispersar/Barajar según el modo de juego elegido
+            if (state.mode === 'libre') {
+                // CORRECCIÓN: Gran grupo único y aleatorio alrededor del tablero central
+                state.pieces.forEach(p => {
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 350 + Math.random() * 300; 
+                    p.x = offsetX + (boardSize / 2) + Math.cos(angle) * distance - (pSize / 2);
+                    p.y = offsetY + (boardSize / 2) + Math.sin(angle) * distance - (pSize / 2);
+                    
+                    p.el.style.left = `${p.x}px`;
+                    p.el.style.top = `${p.y}px`;
+                    canvas.appendChild(p.el);
+                });
+            } else {
+                // Modo Intercambio: Posiciones de rejilla ordenadas pero con IDs de piezas totalmente mezcladas
+                const gridPositions = state.pieces.map(p => ({ x: p.tx, y: p.ty }));
+                // Algoritmo de barajado Fisher-Yates
+                for (let i = gridPositions.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [gridPositions[i], gridPositions[j]] = [gridPositions[j], gridPositions[i]];
+                }
+                state.pieces.forEach((p, i) => {
+                    p.x = gridPositions[i].x;
+                    p.y = gridPositions[i].y;
+                    p.el.style.left = `${p.x}px`;
+                    p.el.style.top = `${p.y}px`;
+                    canvas.appendChild(p.el);
+                });
             }
 
             state.pieces.forEach(p => {
@@ -546,6 +555,7 @@
             const groupIdx = state.groups.findIndex(g => g.includes(clickedPiece.id));
             const groupIds = state.groups[groupIdx];
 
+            // Traer bloque adelante
             groupIds.forEach(id => canvas.appendChild(state.pieces[id].el));
 
             const startX = e.clientX;
@@ -556,23 +566,85 @@
                 const dx = (ev.clientX - startX) / state.zoom;
                 const dy = (ev.clientY - startY) / state.zoom;
 
-                initialPos.forEach(pos => {
-                    const piece = state.pieces[pos.id];
-                    piece.x = pos.x + dx;
-                    piece.y = pos.y + dy;
-                    piece.el.style.left = `${piece.x}px`;
-                    piece.el.style.top = `${piece.y}px`;
+                groupIds.forEach((id, idx) => {
+                    const piece = state.pieces[id];
+                    piece.el.style.left = `${initialPos[idx].x + dx}px`;
+                    piece.el.style.top = `${initialPos[idx].y + dy}px`;
                 });
             }
 
-            function onPointerUp() {
+            function onPointerUp(ev) {
                 window.removeEventListener('pointermove', onPointerMove);
                 window.removeEventListener('pointerup', onPointerUp);
 
                 state.moves++;
                 document.getElementById('txt-moves').textContent = state.moves;
 
-                checkGroupUnions(groupIdx);
+                if (state.mode === 'libre') {
+                    // Guardar posiciones finales arrastradas
+                    groupIds.forEach(id => {
+                        state.pieces[id].x = parseFloat(state.pieces[id].el.style.left);
+                        state.pieces[id].y = parseFloat(state.pieces[id].el.style.top);
+                    });
+                    checkGroupUnions(groupIdx);
+                } else {
+                    // MÓDULO DE INTERCAMBIO (SWAP)
+                    // Detectar qué pieza/bloque está debajo del dedo al soltar
+                    const releaseX = ev.clientX;
+                    const releaseY = ev.clientY;
+                    
+                    let targetPiece = null;
+                    // Buscar la pieza más cercana al punto de liberación que NO pertenezca al grupo que movemos
+                    for (let p of state.pieces) {
+                        if (groupIds.includes(p.id)) continue;
+                        const rect = p.el.getBoundingClientRect();
+                        if (releaseX >= rect.left && releaseX <= rect.right && releaseY >= rect.top && releaseY <= rect.bottom) {
+                            targetPiece = p;
+                            break;
+                        }
+                    }
+
+                    if (targetPiece) {
+                        // Encontrar el grupo completo de la pieza destino
+                        const targetGroupIdx = state.groups.findIndex(g => g.includes(targetPiece.id));
+                        const targetGroupIds = state.groups[targetGroupIdx];
+
+                        // Calcular vectores de desplazamiento mutuo entre bloques
+                        const sourceCenterX = clickedPiece.x;
+                        const sourceCenterY = clickedPiece.y;
+                        const targetCenterX = targetPiece.x;
+                        const targetCenterY = targetPiece.y;
+
+                        const shiftX = targetCenterX - sourceCenterX;
+                        const shiftY = targetCenterY - sourceCenterY;
+
+                        // Mover piezas de origen a destino
+                        groupIds.forEach(id => {
+                            state.pieces[id].x += shiftX;
+                            state.pieces[id].y += shiftY;
+                            state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
+                            state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
+                        });
+
+                        // Mover piezas de destino a origen
+                        targetGroupIds.forEach(id => {
+                            state.pieces[id].x -= shiftX;
+                            state.pieces[id].y -= shiftY;
+                            state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
+                            state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
+                        });
+
+                        // Verificar uniones para ambos bloques permutados
+                        checkGroupUnions(state.groups.findIndex(g => g.includes(clickedPiece.id)));
+                        checkGroupUnions(state.groups.findIndex(g => g.includes(targetPiece.id)));
+                    } else {
+                        // Si se suelta en la nada, regresar el bloque a su lugar de origen
+                        groupIds.forEach(id => {
+                            state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
+                            state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
+                        });
+                    }
+                }
             }
 
             window.addEventListener('pointermove', onPointerMove);
@@ -580,8 +652,12 @@
         }
 
         function checkGroupUnions(currentGroupIdx) {
+            if (currentGroupIdx === -1) return;
             const currentGroup = state.groups[currentGroupIdx];
-            const tolerance = 24; 
+            if (!currentGroup) return;
+            
+            // Tolerancia ajustada: estricta en intercambio, flexible en libre
+            const tolerance = state.mode === 'libre' ? 24 : 5; 
             let unionFound = false;
 
             for (let i = 0; i < state.groups.length; i++) {
@@ -637,32 +713,44 @@
                 hideInternalBorders(finalGroup);
             }
 
-            const activeGroupIdx = state.groups.findIndex(g => g.includes(currentGroup[0]));
-            const activeGroup = state.groups[activeGroupIdx];
-            const checkPiece = state.pieces[activeGroup[0]];
-            const distToTarget = Math.hypot(checkPiece.x - checkPiece.tx, checkPiece.y - checkPiece.ty);
-            
-            if(distToTarget < tolerance) {
-                const shiftX = checkPiece.tx - checkPiece.x;
-                const shiftY = checkPiece.ty - checkPiece.y;
+            // En modo libre, ajustar a las coordenadas meta finales del tablero
+            if (state.mode === 'libre') {
+                const activeGroupIdx = state.groups.findIndex(g => g.includes(currentGroup[0]));
+                if (activeGroupIdx !== -1) {
+                    const activeGroup = state.groups[activeGroupIdx];
+                    const checkPiece = state.pieces[activeGroup[0]];
+                    const distToTarget = Math.hypot(checkPiece.x - checkPiece.tx, checkPiece.y - checkPiece.ty);
+                    
+                    if(distToTarget < tolerance) {
+                        const shiftX = checkPiece.tx - checkPiece.x;
+                        const shiftY = checkPiece.ty - checkPiece.y;
 
-                activeGroup.forEach(id => {
-                    const p = state.pieces[id];
-                    p.x += shiftX; p.y += shiftY;
-                    p.el.style.left = `${p.tx}px`;
-                    p.el.style.top = `${p.ty}px`;
-                    p.el.style.boxShadow = "none";
-                    p.el.style.border = "none"; 
-                });
+                        activeGroup.forEach(id => {
+                            const p = state.pieces[id];
+                            p.x += shiftX; p.y += shiftY;
+                            p.el.style.left = `${p.tx}px`;
+                            p.el.style.top = `${p.ty}px`;
+                            p.el.style.boxShadow = "none";
+                            p.el.style.border = "none"; 
+                        });
+                    }
+                }
             }
 
+            // CONDICIÓN DE VICTORIA TOTAL
             if (state.groups.length === 1) {
+                // En modo intercambio, asegurar que el bloque completo esté en el origen correcto
+                if (state.mode === 'intercambio') {
+                    const p = state.pieces[0];
+                    if (p.x !== p.tx || p.y !== p.ty) return; // Debe estar ordenado correctamente
+                }
+                
                 stopTimer();
                 setTimeout(() => {
                     if(document.exitFullscreen) document.exitFullscreen().catch(()=>{});
-                    document.getElementById('txt-victory-stats').innerText = `Tiempo total: ${document.getElementById('txt-time').innerText} | Movimientos: ${state.moves}`;
+                    document.getElementById('txt-victory-stats').innerText = `Tiempo: ${document.getElementById('txt-time').innerText} | Movimientos totales: ${state.moves}`;
                     document.getElementById('victory-layer').style.display = 'flex';
-                }, 600);
+                }, 500);
             }
         }
 
