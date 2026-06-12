@@ -49,34 +49,34 @@
         }
         .screen.active { display: flex; }
 
-        h1 { font-size: 2.2rem; margin-bottom: 30px; text-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-        h2 { font-size: 1.5rem; margin-bottom: 15px; }
+        h1 { font-size: 2rem; margin-bottom: 15px; text-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        h2 { font-size: 1.4rem; margin-bottom: 10px; }
 
         .card {
             background: var(--surface-color);
-            padding: 25px;
+            padding: 20px;
             border-radius: var(--border-radius);
             width: 100%;
             max-width: 400px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 12px;
         }
 
         .control-group {
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 4px;
         }
-        label { font-size: 0.9rem; color: #aaa; }
+        label { font-size: 0.85rem; color: #aaa; }
         select, input[type="file"] {
-            padding: 12px;
+            padding: 10px;
             border-radius: 8px;
             border: 1px solid #444;
             background: #2a2a2a;
             color: #fff;
-            font-size: 1rem;
+            font-size: 0.95rem;
             outline: none;
         }
 
@@ -84,28 +84,42 @@
             background-color: var(--accent-color);
             color: #000;
             border: none;
-            padding: 14px;
+            padding: 12px;
             border-radius: 8px;
             cursor: pointer;
             font-weight: bold;
-            font-size: 1rem;
+            font-size: 0.95rem;
             transition: transform 0.1s;
             text-align: center;
         }
         .btn:active { transform: scale(0.98); }
         .btn-secondary { background: #333; color: #fff; }
+        .btn-success { background: #4caf50; color: #fff; }
 
-        #preview-img {
+        /* Contenedor Unificado de Preview / Cámara */
+        .preview-box-container {
             width: 100%;
-            max-width: 300px;
+            max-width: 280px;
             aspect-ratio: 1/1;
-            object-fit: cover;
+            position: relative;
+            margin: 10px auto;
             border-radius: var(--border-radius);
-            margin-bottom: 20px;
+            overflow: hidden;
             box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+            background: #000;
         }
 
-        /* ÁREA DE JUEGO */
+        #preview-img, #webcam {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
+            top: 0; left: 0;
+        }
+
+        #webcam { display: none; transform: scaleX(-1); /* Efecto espejo natural */ }
+
+        /* ÁREA DE JUEGO (REPARADA PARA EVITAR PARPADEOS) */
         #game-header {
             width: 100%;
             position: absolute;
@@ -115,7 +129,8 @@
             justify-content: space-between;
             align-items: center;
             background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
-            z-index: 100;
+            z-index: 1000;
+            backface-visibility: hidden;
         }
 
         #viewport {
@@ -136,7 +151,11 @@
             background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1.5px, transparent 0);
             background-size: 30px 30px;
             transform-origin: 0 0;
+            /* Anti-parpadeo por hardware */
             will-change: transform;
+            transform: translate3d(0,0,0);
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
         }
 
         .puzzle-piece {
@@ -144,10 +163,13 @@
             cursor: grab;
             touch-action: none;
             box-shadow: 0 4px 8px rgba(0,0,0,0.4);
-            /* Borde inicial nítido para piezas sueltas */
             border: 1px solid rgba(255, 255, 255, 0.25);
+            /* Forzar comportamiento de textura nativa */
+            transform: translate3d(0,0,0);
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
         }
-        .puzzle-piece:active { cursor: grabbing; z-index: 9999 !important; }
+        .puzzle-piece:active { cursor: grabbing; z-index: 99999 !important; }
 
         @keyframes flash-union {
             0% { filter: brightness(1); box-shadow: 0 0 0px var(--accent-color); }
@@ -166,7 +188,7 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            z-index: 10000;
+            z-index: 100000;
         }
 
         #zoom-indicator {
@@ -180,10 +202,11 @@
             font-size: 0.8rem;
             pointer-events: none;
             color: #ccc;
-            z-index: 100;
+            z-index: 1000;
             text-align: center;
             width: 90%;
             max-width: 360px;
+            backface-visibility: hidden;
         }
     </style>
 </head>
@@ -202,18 +225,18 @@
                     <option value="12">12 x 12 (Leyenda)</option>
                 </select>
             </div>
-            <button id="btn-source-api" class="btn">Buscar Imagen Online</button>
+            
+            <button id="btn-source-api" class="btn">Imagen Online Aleatoria 🔄</button>
             <input type="file" id="btn-source-file" accept="image/*">
-            <button id="btn-source-cam" class="btn btn-secondary">Tomar Foto 📸</button>
-        </div>
-    </div>
+            <button id="btn-source-cam" class="btn btn-secondary">Usar Cámara 📸</button>
+            <button id="btn-snap" class="btn" style="background:#ff9800; color:#000; display:none;">¡Capturar Foto! 🎯</button>
 
-    <div id="screen-preview" class="screen">
-        <h2>Vista Previa del Desafío</h2>
-        <img id="preview-img" src="" alt="Preview">
-        <div style="display:flex; gap:10px; width:100%; max-width:300px;">
-            <button id="btn-preview-back" class="btn btn-secondary" style="flex:1;">Atrás</button>
-            <button id="btn-preview-start" class="btn" style="flex:2; background:#4caf50; color:#fff;">¡Comenzar!</button>
+            <div class="preview-box-container">
+                <img id="preview-img" src="https://picsum.photos/600/600" alt="Preview">
+                <video id="webcam" autoplay playsinline></video>
+            </div>
+
+            <button id="btn-preview-start" class="btn btn-success">¡Comenzar Desafío!</button>
         </div>
     </div>
 
@@ -229,7 +252,7 @@
             <div id="pan-zoom-canvas"></div>
         </div>
 
-        <div id="zoom-indicator">Pinch con dos dedos para Ultra Zoom Out | Mueve el fondo para navegar</div>
+        <div id="zoom-indicator">Pinch para Ultra Zoom | Arrastra el fondo para mover la cámara</div>
     </div>
 
     <div id="victory-layer">
@@ -237,8 +260,6 @@
         <p id="txt-victory-stats" style="margin-bottom:25px;"></p>
         <button id="btn-victory-close" class="btn" style="width:200px;">Volver al Menú</button>
     </div>
-
-    <video id="webcam" style="display:none;" autoplay playsinline></video>
 
     <script>
         const state = {
@@ -251,69 +272,94 @@
             timerInterval: null,
             zoom: 1,
             panX: 0,
-            panY: 0
+            panY: 0,
+            streamObject: null
         };
 
         const canvas = document.getElementById('pan-zoom-canvas');
         const viewport = document.getElementById('viewport');
+        const video = document.getElementById('webcam');
+        const previewImg = document.getElementById('preview-img');
 
         document.addEventListener('DOMContentLoaded', () => {
             setupMenuEvents();
             setupAdvancedGestures();
         });
 
-        function showScreen(screenId) {
-            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            document.getElementById(screenId).classList.add('active');
-        }
-
         function setupMenuEvents() {
+            // Cargar imagen de internet e impactar directo en la vista inferior
             document.getElementById('btn-source-api').addEventListener('click', () => {
+                closeWebcam();
                 state.imgSrc = `https://picsum.photos/800/800?sig=${Math.floor(Math.random()*1000)}`;
-                openPreview();
+                previewImg.src = state.imgSrc;
             });
 
             document.getElementById('btn-source-file').addEventListener('change', (e) => {
                 if(e.target.files[0]) {
+                    closeWebcam();
                     state.imgSrc = URL.createObjectURL(e.target.files[0]);
-                    openPreview();
+                    previewImg.src = state.imgSrc;
                 }
             });
 
+            // Flujo de Cámara Seguro y Visible integrado en la caja de preview
             document.getElementById('btn-source-cam').addEventListener('click', async () => {
                 try {
-                    const video = document.getElementById('webcam');
-                    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                    video.srcObject = stream;
-                    setTimeout(() => {
-                        const canvasSnap = document.createElement('canvas');
-                        canvasSnap.width = 600; canvasSnap.height = 600;
-                        const ctx = canvasSnap.getContext('2d');
-                        const min = Math.min(video.videoWidth, video.videoHeight);
-                        ctx.drawImage(video, (video.videoWidth-min)/2, (video.videoHeight-min)/2, min, min, 0, 0, 600, 600);
-                        state.imgSrc = canvasSnap.toDataURL('image/jpeg');
-                        stream.getTracks().forEach(t => t.stop());
-                        openPreview();
-                    }, 1000);
-                } catch(e) { alert("Cámara no disponible"); }
+                    state.streamObject = await navigator.mediaDevices.getUserMedia({ 
+                        video: { facingMode: "environment", width: 600, height: 600 } 
+                    });
+                    video.srcObject = state.streamObject;
+                    
+                    // Intercambio visual: Apagar foto, encender video en vivo
+                    previewImg.style.display = 'none';
+                    video.style.display = 'block';
+                    document.getElementById('btn-snap').style.display = 'block';
+                } catch(e) { 
+                    alert("Error: Verifica que diste permisos y que ninguna otra app use la cámara."); 
+                }
             });
 
-            document.getElementById('btn-preview-back').addEventListener('click', () => showScreen('screen-menu'));
+            // Botón para congelar y capturar el cuadro de video
+            document.getElementById('btn-snap').addEventListener('click', () => {
+                if (!state.streamObject) return;
+                
+                const canvasSnap = document.createElement('canvas');
+                canvasSnap.width = 600; canvasSnap.height = 600;
+                const ctx = canvasSnap.getContext('2d');
+                
+                // Conservar proporción cuadrada perfecta
+                const min = Math.min(video.videoWidth, video.videoHeight);
+                ctx.translate(600, 0); ctx.scale(-1, 1); // Despejar el efecto espejo al guardar
+                ctx.drawImage(video, (video.videoWidth-min)/2, (video.videoHeight-min)/2, min, min, 0, 0, 600, 600);
+                
+                state.imgSrc = canvasSnap.toDataURL('image/jpeg');
+                previewImg.src = state.imgSrc;
+                
+                closeWebcam();
+            });
+
             document.getElementById('btn-preview-start').addEventListener('click', initGameplay);
             document.getElementById('btn-game-quit').addEventListener('click', () => {
                 stopTimer();
                 if(document.exitFullscreen) document.exitFullscreen().catch(()=>{});
-                showScreen('screen-menu');
+                document.getElementById('screen-menu').classList.add('active');
+                document.getElementById('screen-game').classList.remove('active');
             });
             document.getElementById('btn-victory-close').addEventListener('click', () => {
                 document.getElementById('victory-layer').style.display = 'none';
-                showScreen('screen-menu');
+                document.getElementById('screen-menu').classList.add('active');
+                document.getElementById('screen-game').classList.remove('active');
             });
         }
 
-        function openPreview() {
-            document.getElementById('preview-img').src = state.imgSrc;
-            showScreen('screen-preview');
+        function closeWebcam() {
+            if (state.streamObject) {
+                state.streamObject.getTracks().forEach(track => track.stop());
+                state.streamObject = null;
+            }
+            video.style.display = 'none';
+            previewImg.style.display = 'block';
+            document.getElementById('btn-snap').style.display = 'none';
         }
 
         function setupAdvancedGestures() {
@@ -329,8 +375,7 @@
                 const zoomFactor = state.zoom * 0.15;
                 let nextZoom = e.deltaY < 0 ? state.zoom + zoomFactor : state.zoom - zoomFactor;
                 
-                // MEJORA: Aumento extremo de límite de zoom-out (mínimo 0.05)
-                nextZoom = Math.max(0.05, Math.min(nextZoom, 3));
+                nextZoom = Math.max(0.04, Math.min(nextZoom, 3));
                 
                 const rect = viewport.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
@@ -390,8 +435,7 @@
                     const scaleChange = currentDist / startPinchDist;
                     let nextZoom = startZoom * scaleChange;
                     
-                    // MEJORA: Límite extremo también para gestos táctiles (0.05)
-                    nextZoom = Math.max(0.05, Math.min(nextZoom, 3));
+                    nextZoom = Math.max(0.04, Math.min(nextZoom, 3));
 
                     const midX = (pointers[0].clientX + pointers[1].clientX) / 2;
                     const midY = (pointers[0].clientY + pointers[1].clientY) / 2;
@@ -406,9 +450,7 @@
 
             const removePointer = (e) => {
                 delete activePointers[e.pointerId];
-                if (Object.keys(activePointers).length < 1) {
-                    isDraggingBg = false;
-                }
+                if (Object.keys(activePointers).length < 1) isDraggingBg = false;
             };
 
             viewport.addEventListener('pointerup', removePointer);
@@ -417,15 +459,15 @@
         }
 
         function updateCanvasTransform() {
-            canvas.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+            canvas.style.transform = `translate3d(${state.panX}px, ${state.panY}px, 0) scale(${state.zoom})`;
         }
 
         function initGameplay() {
+            closeWebcam();
             state.size = parseInt(document.getElementById('cfg-size').value);
             state.moves = 0;
             
-            // Iniciar con vista un poco alejada estratégica para ver las piezas dispersas
-            state.zoom = 0.6;
+            state.zoom = 0.5;
             state.panX = (window.innerWidth - (4000 * state.zoom)) / 2;
             state.panY = (window.innerHeight - (1200 * state.zoom)) / 3;
             updateCanvasTransform();
@@ -435,7 +477,9 @@
             const docEl = document.documentElement;
             if(docEl.requestFullscreen) docEl.requestFullscreen().catch(()=>{});
 
-            showScreen('screen-game');
+            document.getElementById('screen-menu').classList.remove('active');
+            document.getElementById('screen-game').classList.add('active');
+            
             buildPuzzleBoard();
             startTimer();
         }
@@ -445,7 +489,6 @@
             const boardSize = 600; 
             const pSize = boardSize / state.size;
             
-            // Tablero en el centro del súper lienzo expandido de 4000x4000
             const offsetX = (4000 - boardSize) / 2;
             const offsetY = (4000 - boardSize) / 2;
 
@@ -466,14 +509,13 @@
                     const targetX = offsetX + (c * pSize);
                     const targetY = offsetY + (r * pSize);
 
-                    // Dispersión lejana para aprovechar el nuevo zoom panorámico
                     let randomX, randomY;
                     if(Math.random() > 0.5){
-                        randomX = offsetX - 600 + Math.random() * 300;
+                        randomX = offsetX - 700 + Math.random() * 400;
                     } else {
-                        randomX = offsetX + boardSize + 300 + Math.random() * 300;
+                        randomX = offsetX + boardSize + 300 + Math.random() * 400;
                     }
-                    randomY = offsetY - 300 + Math.random() * (boardSize + 600);
+                    randomY = offsetY - 400 + Math.random() * (boardSize + 800);
                     
                     piece.style.left = `${randomX}px`;
                     piece.style.top = `${randomY}px`;
@@ -504,7 +546,6 @@
             const groupIdx = state.groups.findIndex(g => g.includes(clickedPiece.id));
             const groupIds = state.groups[groupIdx];
 
-            // Traer el grupo completo al frente
             groupIds.forEach(id => canvas.appendChild(state.pieces[id].el));
 
             const startX = e.clientX;
@@ -540,7 +581,7 @@
 
         function checkGroupUnions(currentGroupIdx) {
             const currentGroup = state.groups[currentGroupIdx];
-            const tolerance = 22; 
+            const tolerance = 24; 
             let unionFound = false;
 
             for (let i = 0; i < state.groups.length; i++) {
@@ -585,13 +626,12 @@
                 if (unionFound) break;
             }
 
-            // CORRECCIÓN CRÍTICA: El efecto flash SOLO se dispara aquí si unionFound fue exitoso
             if (unionFound) {
                 const finalGroup = state.groups.find(g => g.includes(currentGroup[0]));
                 finalGroup.forEach(id => {
                     const el = state.pieces[id].el;
                     el.classList.remove('flash-active');
-                    void el.offsetWidth; // Forzar reflow eléctrico del DOM
+                    void el.offsetWidth; 
                     el.classList.add('flash-active');
                 });
                 hideInternalBorders(finalGroup);
@@ -612,7 +652,7 @@
                     p.el.style.left = `${p.tx}px`;
                     p.el.style.top = `${p.ty}px`;
                     p.el.style.boxShadow = "none";
-                    p.el.style.border = "none"; // Eliminar bordes por completo al encajar en la meta final
+                    p.el.style.border = "none"; 
                 });
             }
 
@@ -626,7 +666,6 @@
             }
         }
 
-        // CORRECCIÓN CRÍTICA DE BORDES: Manejo unificado de la propiedad border para evitar remanentes visuales
         function hideInternalBorders(groupIds) {
             groupIds.forEach(id1 => {
                 const p1 = state.pieces[id1];
@@ -640,7 +679,6 @@
                     if (p1.r === p2.r && p1.c + 1 === p2.c) rightMatch = true;
                 });
 
-                // Si hay un vecino acoplado en ese lado, el borde se vuelve totalmente transparente e invisible
                 p1.el.style.borderTop = topMatch ? "1px solid transparent" : "1px solid rgba(255,255,255,0.25)";
                 p1.el.style.borderBottom = bottomMatch ? "1px solid transparent" : "1px solid rgba(255,255,255,0.25)";
                 p1.el.style.borderLeft = leftMatch ? "1px solid transparent" : "1px solid rgba(255,255,255,0.25)";
