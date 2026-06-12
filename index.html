@@ -36,7 +36,6 @@
             overflow: hidden;
         }
 
-        /* Vistas de la Aplicación */
         .screen {
             display: none;
             flex-direction: column;
@@ -96,7 +95,6 @@
         .btn:active { transform: scale(0.98); }
         .btn-secondary { background: #333; color: #fff; }
 
-        /* Vista Previa */
         #preview-img {
             width: 100%;
             max-width: 300px;
@@ -107,7 +105,7 @@
             box-shadow: 0 8px 20px rgba(0,0,0,0.5);
         }
 
-        /* Pantalla de Juego Completa */
+        /* ÁREA DE JUEGO AVANZADA */
         #game-header {
             width: 100%;
             position: absolute;
@@ -117,23 +115,51 @@
             justify-content: space-between;
             align-items: center;
             background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
-            z-index: 10;
+            z-index: 100;
         }
-        #game-canvas-container {
+
+        /* Visor / Ventana de recorte */
+        #viewport {
             width: 100vw;
             height: 100vh;
+            overflow: hidden;
             position: relative;
-            background: #1a1a1a;
+            background: #16161a;
         }
+
+        /* Lienzo infinito que sufre Zoom y Paneo */
+        #pan-zoom-canvas {
+            position: absolute;
+            width: 3000px;
+            height: 3000px;
+            top: -1000px;
+            left: -1000px;
+            background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 0);
+            background-size: 24px 24px;
+            transform-origin: center center;
+        }
+
         .puzzle-piece {
             position: absolute;
             cursor: grab;
             touch-action: none;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.4);
+            /* Borde inicial para piezas sueltas */
+            outline: 1px solid rgba(255,255,255,0.15);
+            outline-offset: -1px;
         }
-        .puzzle-piece:active { cursor: grabbing; z-index: 999; }
+        .puzzle-piece:active { cursor: grabbing; z-index: 9999 !important; }
 
-        /* Victoria */
+        /* Animación Flash para Uniones Metálicas */
+        @keyframes flash-union {
+            0% { filter: brightness(1); box-shadow: 0 0 0px var(--accent-color); }
+            50% { filter: brightness(1.6); box-shadow: 0 0 25px var(--accent-color); z-index: 999; }
+            100% { filter: brightness(1); box-shadow: 0 3px 6px rgba(0,0,0,0.4); }
+        }
+        .flash-active {
+            animation: flash-union 0.4s ease-out-in;
+        }
+
         #victory-layer {
             position: fixed;
             top: 0; left: 0; width: 100vw; height: 100vh;
@@ -142,23 +168,30 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            z-index: 1000;
+            z-index: 10000;
+        }
+
+        /* Instrucción de Zoom en Pantalla */
+        #zoom-indicator {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.6);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            pointer-events: none;
+            color: #aaa;
+            z-index: 100;
         }
     </style>
 </head>
 <body>
 
-    <!-- 1. PANTALLA: MENÚ / CONFIGURACIONES -->
     <div id="screen-menu" class="screen active">
         <h1>Puzzle Master Pro</h1>
         <div class="card">
-            <div class="control-group">
-                <label>Modo de Juego</label>
-                <select id="cfg-mode">
-                    <option value="classic">Jigsolitaire (Unión de piezas)</option>
-                    <option value="sliding">Deslizante Tradicional</option>
-                </select>
-            </div>
             <div class="control-group">
                 <label>Dificultad</label>
                 <select id="cfg-size">
@@ -174,7 +207,6 @@
         </div>
     </div>
 
-    <!-- 2. PANTALLA: VISTA PREVIA -->
     <div id="screen-preview" class="screen">
         <h2>Vista Previa del Desafío</h2>
         <img id="preview-img" src="" alt="Preview">
@@ -184,7 +216,6 @@
         </div>
     </div>
 
-    <!-- 3. PANTALLA: JUEGO EN PANTALLA COMPLETA -->
     <div id="screen-game" class="screen" style="padding:0;">
         <div id="game-header">
             <button id="btn-game-quit" class="btn btn-secondary" style="padding:8px 12px;">✕ Salir</button>
@@ -192,10 +223,14 @@
                 ⏱️ <span id="txt-time">00:00</span> | 🔄 <span id="txt-moves">0</span>
             </div>
         </div>
-        <div id="game-canvas-container"></div>
+        
+        <div id="viewport">
+            <div id="pan-zoom-canvas"></div>
+        </div>
+
+        <div id="zoom-indicator">Pinch / Rueda para Zoom | Un dedo para mover piezas o fondo</div>
     </div>
 
-    <!-- 4. PANTALLA / CAPA DE VICTORIA -->
     <div id="victory-layer">
         <h2 style="color:#4caf50; font-size:3rem; margin-bottom:10px;">¡Completado!</h2>
         <p id="txt-victory-stats" style="margin-bottom:25px;"></p>
@@ -204,33 +239,36 @@
 
     <video id="webcam" style="display:none;" autoplay playsinline></video>
 
-    <!-- LÓGICA DEL JUEGO -->
     <script>
         const state = {
-            mode: 'classic',
             size: 4,
             imgSrc: 'https://picsum.photos/600/600',
             pieces: [], 
-            groups: [], // Almacenará qué piezas están unidas entre sí (Jigsolitaire)
+            groups: [],
             moves: 0,
             startTime: null,
-            timerInterval: null
+            timerInterval: null,
+            // Estado de Zoom e Inercia
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            isPanning: false
         };
 
-        // Cambiar de pantallas
+        const canvas = document.getElementById('pan-zoom-canvas');
+        const viewport = document.getElementById('viewport');
+
+        document.addEventListener('DOMContentLoaded', () => {
+            setupMenuEvents();
+            setupZoomAndPan();
+        });
+
         function showScreen(screenId) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             document.getElementById(screenId).classList.add('active');
         }
 
-        // Configuración Inicial
-        document.addEventListener('DOMContentLoaded', () => {
-            setupMenuEvents();
-            setupGameEngine();
-        });
-
         function setupMenuEvents() {
-            // Cargar Imagenes
             document.getElementById('btn-source-api').addEventListener('click', () => {
                 state.imgSrc = `https://picsum.photos/800/800?sig=${Math.floor(Math.random()*1000)}`;
                 openPreview();
@@ -248,21 +286,19 @@
                     const video = document.getElementById('webcam');
                     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
                     video.srcObject = stream;
-                    // Forzar captura rápida tras inicio del stream
                     setTimeout(() => {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = 600; canvas.height = 600;
-                        const ctx = canvas.getContext('2d');
+                        const canvasSnap = document.createElement('canvas');
+                        canvasSnap.width = 600; canvasSnap.height = 600;
+                        const ctx = canvasSnap.getContext('2d');
                         const min = Math.min(video.videoWidth, video.videoHeight);
                         ctx.drawImage(video, (video.videoWidth-min)/2, (video.videoHeight-min)/2, min, min, 0, 0, 600, 600);
-                        state.imgSrc = canvas.toDataURL('image/jpeg');
+                        state.imgSrc = canvasSnap.toDataURL('image/jpeg');
                         stream.getTracks().forEach(t => t.stop());
                         openPreview();
                     }, 1000);
                 } catch(e) { alert("Cámara no disponible"); }
             });
 
-            // Flujos Vista Previa
             document.getElementById('btn-preview-back').addEventListener('click', () => showScreen('screen-menu'));
             document.getElementById('btn-preview-start').addEventListener('click', initGameplay);
             document.getElementById('btn-game-quit').addEventListener('click', () => {
@@ -281,14 +317,68 @@
             showScreen('screen-preview');
         }
 
-        // Motor del Juego: Rejilla Libre con Unión de Grupos (Jigsolitaire)
+        // CONTROL DE ZOOM Y PANEO (LIENZO)
+        function setupZoomAndPan() {
+            let startDist = 0;
+            let initialZoom = 1;
+            let isDraggingBg = false;
+            let startX, startY;
+
+            // Zoom con Rueda del Ratón
+            viewport.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const zoomFactor = 0.1;
+                if (e.deltaY < 0) state.zoom = Math.min(state.zoom + zoomFactor, 3);
+                else state.zoom = Math.max(state.zoom - zoomFactor, 0.4);
+                updateCanvasTransform();
+            }, { passive: false });
+
+            // Eventos táctiles y ratón en el fondo del Viewport
+            viewport.addEventListener('pointerdown', (e) => {
+                if (e.target === viewport || e.target === canvas) {
+                    isDraggingBg = true;
+                    startX = e.clientX - state.panX;
+                    startY = e.clientY - state.panY;
+                    viewport.setPointerCapture(e.pointerId);
+                }
+            });
+
+            viewport.addEventListener('pointermove', (e) => {
+                // Soporte Multi-touch (Pinch Zoom)
+                if (e.pointerType === 'touch') {
+                    // Simulación simplificada nativa de pinch-to-zoom mediante eventos nativos si se requiere,
+                    // optimizado aquí para paneo fluido de un dedo.
+                }
+
+                if (isDraggingBg) {
+                    state.panX = e.clientX - startX;
+                    state.panY = e.clientY - startY;
+                    updateCanvasTransform();
+                }
+            });
+
+            const stopBgDrag = (e) => {
+                if (isDraggingBg) {
+                    isDraggingBg = false;
+                    try { viewport.releasePointerCapture(e.pointerId); } catch(err){}
+                }
+            };
+            viewport.addEventListener('pointerup', stopBgDrag);
+            viewport.addEventListener('pointercancel', stopBgDrag);
+        }
+
+        function updateCanvasTransform() {
+            canvas.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+        }
+
+        // MOTOR DE JUEGO (REDISEÑADO CON ADYACENCIA ESTRICTA)
         function initGameplay() {
-            state.mode = document.getElementById('cfg-mode').value;
             state.size = parseInt(document.getElementById('cfg-size').value);
             state.moves = 0;
+            state.zoom = 1; state.panX = 0; state.panY = 0;
+            updateCanvasTransform();
             document.getElementById('txt-moves').textContent = "0";
             
-            // Forzar Pantalla Completa en Móviles
             const docEl = document.documentElement;
             if(docEl.requestFullscreen) docEl.requestFullscreen().catch(()=>{});
 
@@ -298,15 +388,15 @@
         }
 
         function buildPuzzleBoard() {
-            const container = document.getElementById('game-canvas-container');
-            container.innerHTML = '';
+            canvas.innerHTML = '';
             
-            const boardSize = Math.min(window.innerWidth, window.innerHeight * 0.75);
+            // Forzar tablero central a un tamaño fijo dentro del súper lienzo
+            const boardSize = 600; 
             const pSize = boardSize / state.size;
             
-            // Centrar tablero visualmente en la zona inferior
-            const offsetX = (window.innerWidth - boardSize) / 2;
-            const offsetY = (window.innerHeight - boardSize) / 2;
+            // Colocar el tablero justo en el centro del canvas de 3000x3000px
+            const offsetX = (3000 - boardSize) / 2;
+            const offsetY = (3000 - boardSize) / 2;
 
             state.pieces = [];
             state.groups = [];
@@ -322,67 +412,56 @@
                     piece.style.backgroundSize = `${boardSize}px ${boardSize}px`;
                     piece.style.backgroundPosition = `-${c * pSize}px -${r * pSize}px`;
                     
-                    // Posición correcta de destino
+                    // Destino absoluto dentro del lienzo
                     const targetX = offsetX + (c * pSize);
                     const targetY = offsetY + (r * pSize);
 
-                    // Posición inicial aleatoria dispersa por toda la pantalla externa al tablero
-                    const randomX = Math.random() * (window.innerWidth - pSize);
-                    const randomY = offsetY + boardSize + (Math.random() * (window.innerHeight - offsetY - boardSize - pSize));
+                    // Dispersión masiva por todo el lienzo de trabajo
+                    const randomX = offsetX - 400 + Math.random() * (boardSize + 800 - pSize);
+                    const randomY = offsetY + boardSize + 100 + Math.random() * 400;
                     
                     piece.style.left = `${randomX}px`;
                     piece.style.top = `${randomY}px`;
 
                     piece.dataset.id = index;
-                    piece.dataset.r = r;
-                    piece.dataset.c = c;
-
-                    container.appendChild(piece);
+                    canvas.appendChild(piece);
 
                     state.pieces.push({
-                        el: piece,
-                        id: index,
+                        el: piece, id: index,
                         r: r, c: c,
-                        tx: targetX, ty: targetY, // Target absolutos
+                        tx: targetX, ty: targetY,
                         x: randomX, y: randomY
                     });
 
-                    // Cada pieza empieza siendo su propio grupo único
                     state.groups.push([index]);
                     index++;
                 }
             }
 
-            // Inyectar Pointer Events para Arrastre Complejo de Grupos
             state.pieces.forEach(p => {
                 p.el.addEventListener('pointerdown', (e) => onPiecePointerDown(e, p));
             });
         }
 
         function onPiecePointerDown(e, clickedPiece) {
+            e.stopPropagation();
             e.preventDefault();
-            const container = document.getElementById('game-canvas-container');
             
-            // Encontrar a qué grupo pertenece la pieza clicada
             const groupIdx = state.groups.findIndex(g => g.includes(clickedPiece.id));
             const groupIds = state.groups[groupIdx];
 
-            // Traer visualmente todas las piezas del grupo al frente
-            groupIds.forEach(id => {
-                container.appendChild(state.pieces[id].el);
-            });
+            // Llevar todo el bloque al frente visual
+            groupIds.forEach(id => canvas.appendChild(state.pieces[id].el));
 
+            // Ajustar diferenciales considerando el nivel de Zoom actual del lienzo
             const startX = e.clientX;
             const startY = e.clientY;
-
-            // Guardar las posiciones originales de todo el grupo al iniciar el arrastre
             const initialPos = groupIds.map(id => ({ id: id, x: state.pieces[id].x, y: state.pieces[id].y }));
 
             function onPointerMove(ev) {
-                const dx = ev.clientX - startX;
-                const dy = ev.clientY - startY;
+                const dx = (ev.clientX - startX) / state.zoom;
+                const dy = (ev.clientY - startY) / state.zoom;
 
-                // Mover todo el grupo en bloque coordinado
                 initialPos.forEach(pos => {
                     const piece = state.pieces[pos.id];
                     piece.x = pos.x + dx;
@@ -399,7 +478,6 @@
                 state.moves++;
                 document.getElementById('txt-moves').textContent = state.moves;
 
-                // Lógica Jigsolitaire: Comprobar magnetismo/uniones entre grupos vecinos
                 checkGroupUnions(groupIdx);
             }
 
@@ -409,10 +487,10 @@
 
         function checkGroupUnions(currentGroupIdx) {
             const currentGroup = state.groups[currentGroupIdx];
-            const tolerance = 25; // Píxeles de distancia para que encajen estilo "imán"
+            const tolerance = 20; 
             let unionFound = false;
+            let targetGroupIdx = -1;
 
-            // Comparar piezas del grupo movido contra el resto de grupos
             for (let i = 0; i < state.groups.length; i++) {
                 if (i === currentGroupIdx) continue;
                 const otherGroup = state.groups[i];
@@ -422,17 +500,20 @@
                         const p1 = state.pieces[pId1];
                         const p2 = state.pieces[pId2];
 
-                        // Distancia matemática esperada basada en su posición real final
+                        // REQUISITO: Solo adyacencia estricta horizontal o vertical (Diferencia de c o r = 1, no diagonal)
+                        const isHorizontalNeighbor = (Math.abs(p1.c - p2.c) === 1 && p1.r === p2.r);
+                        const isVerticalNeighbor = (Math.abs(p1.r - p2.r) === 1 && p1.c === p2.c);
+
+                        if (!isHorizontalNeighbor && !isVerticalNeighbor) continue;
+
                         const expectedDx = (p1.c - p2.c) * p1.el.offsetWidth;
                         const expectedDy = (p1.r - p2.r) * p1.el.offsetHeight;
-
                         const currentDx = p1.x - p2.x;
                         const currentDy = p1.y - p2.y;
 
-                        // Si están cerca de su posición relativa correcta de encaje
                         if (Math.abs(currentDx - expectedDx) < tolerance && Math.abs(currentDy - expectedDy) < tolerance) {
                             
-                            // Ajustar la posición exacta de todo el grupo movido para que encaje perfecto con el otro
+                            // Alinear perfectamente el bloque entero con el otro grupo
                             const shiftX = p2.x + expectedDx - p1.x;
                             const shiftY = p2.y + expectedDy - p1.y;
 
@@ -443,8 +524,8 @@
                                 state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
                             });
 
-                            // Fusionar vectores de ambos grupos en la estructura lógica
                             state.groups[i] = otherGroup.concat(currentGroup);
+                            targetGroupIdx = i;
                             state.groups.splice(currentGroupIdx, 1);
                             unionFound = true;
                             break;
@@ -455,39 +536,80 @@
                 if (unionFound) break;
             }
 
-            // Comprobar si el bloque encaja en la posición final del Tablero general
-            // Tomamos la primera pieza del grupo unificado para validar
-            const checkPiece = state.pieces[state.groups[unionFound ? state.groups.findIndex(g => g.includes(currentGroup[0])) : currentGroupIdx][0]];
+            // Si hubo unión con éxito, ejecutar efectos visuales avanzados
+            if (unionFound && targetGroupIdx !== -1) {
+                const finalGroup = state.groups[state.groups.findIndex(g => g.includes(currentGroup[0]))];
+                
+                // 1. Lanzar efecto Flash a TODO el bloque unificado
+                finalGroup.forEach(id => {
+                    const el = state.pieces[id].el;
+                    el.classList.remove('flash-active');
+                    void el.offsetWidth; // Truco CSS para resetear animación
+                    el.style.animation = 'none';
+                    el.offsetHeight; /* trigger reflow */
+                    el.style.animation = null;
+                    el.classList.add('flash-active');
+                });
+
+                // 2. Romper bordes divisorios internos del bloque
+                hideInternalBorders(finalGroup);
+            }
+
+            // Ajustar al tablero maestro final si todo el conjunto está cerca del origen
+            const activeGroupIdx = state.groups.findIndex(g => g.includes(currentGroup[0]));
+            const activeGroup = state.groups[activeGroupIdx];
+            const checkPiece = state.pieces[activeGroup[0]];
             const distToTarget = Math.hypot(checkPiece.x - checkPiece.tx, checkPiece.y - checkPiece.ty);
             
             if(distToTarget < tolerance) {
-                // Imanar al tablero real
-                const currentActualGroup = state.groups.find(g => g.includes(checkPiece.id));
                 const shiftX = checkPiece.tx - checkPiece.x;
                 const shiftY = checkPiece.ty - checkPiece.y;
 
-                currentActualGroup.forEach(id => {
+                activeGroup.forEach(id => {
                     const p = state.pieces[id];
                     p.x += shiftX; p.y += shiftY;
                     p.el.style.left = `${p.tx}px`;
                     p.el.style.top = `${p.ty}px`;
                     p.el.style.boxShadow = "none";
-                    p.el.style.border = "none";
+                    // Quitar todos los bordes externos/internos al asentarse en la meta
+                    p.el.style.outline = "none"; 
                 });
             }
 
-            // Condición de Victoria: Todas las piezas están en 1 solo grupo consolidado
             if (state.groups.length === 1) {
                 stopTimer();
                 setTimeout(() => {
                     if(document.exitFullscreen) document.exitFullscreen().catch(()=>{});
                     document.getElementById('txt-victory-stats').innerText = `Tiempo total: ${document.getElementById('txt-time').innerText} | Movimientos: ${state.moves}`;
                     document.getElementById('victory-layer').style.display = 'flex';
-                }, 500);
+                }, 600);
             }
         }
 
-        // Cronómetro
+        // Función inteligente para remover bordes de piezas acopladas
+        function hideInternalBorders(groupIds) {
+            groupIds.forEach(id1 => {
+                const p1 = state.pieces[id1];
+                let topMatch = false, bottomMatch = false, leftMatch = false, rightMatch = false;
+
+                groupIds.forEach(id2 => {
+                    const p2 = state.pieces[id2];
+                    if (p1.c === p2.c && p1.r - 1 === p2.r) topMatch = true;
+                    if (p1.c === p2.c && p1.r + 1 === p2.r) bottomMatch = true;
+                    if (p1.r === p2.r && p1.c - 1 === p2.c) leftMatch = true;
+                    if (p1.r === p2.r && p1.c + 1 === p2.c) rightMatch = true;
+                });
+
+                // Crear un recorte u ocultamiento selectivo de bordes mediante propiedades de outline/border dinámicas
+                p1.el.style.outline = "none";
+                p1.el.style.borderTop = topMatch ? "none" : "1px solid rgba(255,255,255,0.2)";
+                p1.el.style.borderBottom = bottomMatch ? "none" : "1px solid rgba(255,255,255,0.2)";
+                p1.el.style.borderLeft = leftMatch ? "none" : "1px solid rgba(255,255,255,0.2)";
+                p1.el.style.borderRight = rightMatch ? "none" : "1px solid rgba(255,255,255,0.2)";
+            });
+        }
+
+        // CRONÓMETRO
         function startTimer() {
             stopTimer();
             state.startTime = Date.now();
