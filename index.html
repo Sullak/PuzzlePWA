@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Puzzle Master PWA</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <style>
+        :root {
+            --bg-color: #f4f4f9;
+            --surface-color: #ffffff;
+            --text-color: #333333;
+            --accent-color: #6200ee;
+            --border-radius: 12px;
+            --transition: all 0.3s ease;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #121212;
+            --surface-color: #1e1e1e;
+            --text-color: #ffffff;
+            --accent-color: #bb86fc;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: var(--transition);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 10px;
+        }
+
+        header {
+            width: 100%;
+            max-width: 500px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+        }
+
+        h1 { font-size: 1.5rem; font-weight: 700; }
+
+        .btn {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            font-weight: 600;
+            transition: var(--transition);
+        }
+        .btn:active { transform: scale(0.95); }
+        .btn-secondary { background-color: #88888833; color: var(--text-color); }
+
+        #controls {
+            width: 100%;
+            max-width: 500px;
+            background: var(--surface-color);
+            padding: 15px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        select, input[type="file"] {
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid #88888855;
+            background: var(--surface-color);
+            color: var(--text-color);
+            flex: 1;
+        }
+
+        #stats-bar {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 500px;
+            background: var(--surface-color);
+            padding: 10px;
+            border-radius: var(--border-radius);
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+
+        #puzzle-container {
+            width: 100%;
+            max-width: 500px;
+            aspect-ratio: 1 / 1;
+            background: #88888822;
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            display: grid;
+        }
+
+        .piece {
+            border: 0.5px solid rgba(255, 255, 255, 0.2);
+            background-repeat: no-repeat;
+            cursor: grab;
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+            touch-action: none; /* Previene scroll nativo al arrastrar */
+        }
+        .piece:active { cursor: grabbing; z-index: 10; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+        .piece.empty { background: transparent !important; border: none; cursor: default; }
+
+        #victory-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.85);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+        #victory-screen.show { opacity: 1; pointer-events: auto; }
+        #victory-screen h2 { font-size: 2.5rem; margin-bottom: 20px; color: #4caf50; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Puzzle Master</h1>
+        <button id="theme-toggle" class="btn btn-secondary">🌓</button>
+    </header>
+
+    <div id="controls">
+        <div class="control-row">
+            <label>Modo:</label>
+            <select id="game-mode">
+                <option value="classic">Clásico (Intercambio)</option>
+                <option value="sliding">Deslizante (Tipo 15)</option>
+            </select>
+            <label>Dificultad:</label>
+            <select id="difficulty">
+                <option value="3">3x3</option>
+                <option value="4" selected>4x4</option>
+                <option value="5">5x5</option>
+                <option value="8">8x8</option>
+            </select>
+        </div>
+        <div class="control-row">
+            <button id="btn-api" class="btn">Imagen Aleatoria</button>
+            <input type="file" id="file-input" accept="image/*">
+        </div>
+        <div class="control-row">
+            <button id="btn-camera" class="btn btn-secondary">Usar Cámara</button>
+            <button id="btn-start" class="btn" style="background-color: #4caf50;">¡Iniciar!</button>
+        </div>
+    </div>
+
+    <div id="stats-bar">
+        <div>Tiempo: <span id="timer">00:00:00</span></div>
+        <div>Movimientos: <span id="moves">0</span></div>
+    </div>
+
+    <div id="puzzle-container"></div>
+
+    <div id="victory-screen">
+        <h2>¡Felicidades!</h2>
+        <p>Has resuelto el rompecabezas.</p>
+        <p id="final-stats" style="margin: 15px 0;"></p>
+        <button id="btn-close-victory" class="btn">Jugar de nuevo</button>
+    </div>
+
+    <video id="video-stream" style="display:none;" autoplay playsinline></video>
+    <canvas id="hidden-canvas" style="display:none;"></canvas>
+
+    <script>
+        // Estado Global de la App
+        const state = {
+            mode: 'classic',
+            size: 4,
+            imageUrl: 'https://picsum.photos/600/600',
+            pieces: [],
+            moves: 0,
+            startTime: null,
+            timerInterval: null,
+            isPlaying: false,
+            draggedIndex: null
+        };
+
+        // Elementos del DOM
+        const container = document.getElementById('puzzle-container');
+        const timerEl = document.getElementById('timer');
+        const movesEl = document.getElementById('moves');
+        const btnStart = document.getElementById('btn-start');
+
+        // Inicialización y Configuración Temas
+        document.addEventListener('DOMContentLoaded', () => {
+            initTheme();
+            setupEventListeners();
+            loadNewPuzzle();
+            registerServiceWorker();
+        });
+
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            document.getElementById('theme-toggle').addEventListener('click', () => {
+                const current = document.documentElement.getAttribute('data-theme');
+                const next = current === 'dark' ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', next);
+                localStorage.setItem('theme', next);
+            });
+        }
+
+        function setupEventListeners() {
+            btnStart.addEventListener('click', startGame);
+            document.getElementById('btn-api').addEventListener('click', () => {
+                const categories = ['nature','animals','architecture','history'];
+                const randomCat = categories[Math.floor(Math.random() * categories.length)];
+                state.imageUrl = `https://picsum.photos/600/600?sig=${Math.random()}`;
+                loadNewPuzzle();
+            });
+
+            document.getElementById('file-input').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if(file) {
+                    state.imageUrl = URL.createObjectURL(file);
+                    loadNewPuzzle();
+                }
+            });
+
+            document.getElementById('btn-camera').addEventListener('click', initCamera);
+            document.getElementById('btn-close-victory').addEventListener('click', () => {
+                document.getElementById('victory-screen').classList.remove('show');
+                loadNewPuzzle();
+            });
+        }
+
+        async function initCamera() {
+            try {
+                const video = document.getElementById('video-stream');
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+                video.srcObject = stream;
+                video.style.display = "block";
+                
+                // Click temporal en el video para capturar la foto
+                video.onclick = () => {
+                    const canvas = document.getElementById('hidden-canvas');
+                    canvas.width = 600;
+                    canvas.height = 600;
+                    const ctx = canvas.getContext('2d');
+                    // Corte cuadrado central
+                    const minDim = Math.min(video.videoWidth, video.videoHeight);
+                    ctx.drawImage(video, (video.videoWidth-minDim)/2, (video.videoHeight-minDim)/2, minDim, minDim, 0, 0, 600, 600);
+                    
+                    state.imageUrl = canvas.toDataURL('image/jpeg');
+                    stream.getTracks().forEach(track => track.stop());
+                    video.style.display = "none";
+                    loadNewPuzzle();
+                };
+                alert('Toca la ventana de video que aparecerá para capturar la foto.');
+            } catch (err) {
+                alert('No se pudo acceder a la cámara: ' + err.message);
+            }
+        }
+
+        // Lógica de generación del Puzzle
+        function loadNewPuzzle() {
+            stopTimer();
+            state.isPlaying = false;
+            state.moves = 0;
+            movesEl.textContent = '0';
+            timerEl.textContent = '00:00:00';
+            
+            state.mode = document.getElementById('game-mode').value;
+            state.size = parseInt(document.getElementById('difficulty').value);
+
+            container.style.gridTemplateColumns = `repeat(${state.size}, 1fr)`;
+            container.style.gridTemplateRows = `repeat(${state.size}, 1fr)`;
+            container.innerHTML = '';
+
+            state.pieces = Array.from({length: state.size * state.size}, (_, i) => i);
+            renderPieces();
+        }
+
+        function renderPieces() {
+            container.innerHTML = '';
+            const size = state.size;
+
+            state.pieces.forEach((correctIndex, currentIndex) => {
+                const piece = document.createElement('div');
+                piece.classList.add('piece');
+                piece.dataset.index = currentIndex;
+
+                if (state.mode === 'sliding' && correctIndex === (size * size - 1)) {
+                    piece.classList.add('empty');
+                } else {
+                    piece.style.backgroundImage = `url(${state.imageUrl})`;
+                    piece.style.backgroundSize = `${size * 100}% ${size * 100}%`;
+                    
+                    const row = Math.floor(correctIndex / size);
+                    const col = correctIndex % size;
+                    piece.style.backgroundPosition = `${(col / (size - 1)) * 100}% ${(row / (size - 1)) * 100}%`;
+                }
+
+                // Soporte Arrastrar y soltar (Escritorio + Móvil adaptado vía PointerEvents)
+                piece.addEventListener('pointerdown', onPointerDown);
+                container.appendChild(piece);
+            });
+        }
+
+        function startGame() {
+            // Mezclar
+            do {
+                state.pieces.sort(() => Math.random() - 0.5);
+            } while (state.mode === 'sliding' && !isSolvable()); // Evitar puzzles irresolubles en modo 15
+
+            state.moves = 0;
+            movesEl.textContent = '0';
+            state.isPlaying = true;
+            renderPieces();
+            startTimer();
+        }
+
+        // Algoritmo de validación de puzzles deslizantes solucionables
+        function isSolvable() {
+            let inversions = 0;
+            const grid = state.pieces;
+            for (let i = 0; i < grid.length; i++) {
+                for (let j = i + 1; j < grid.length; j++) {
+                    if (grid[i] !== grid.length-1 && grid[j] !== grid.length-1 && grid[i] > grid[j]) {
+                        inversions++;
+                    }
+                }
+            }
+            if (state.size % 2 !== 0) return inversions % 2 === 0;
+            const emptyRowFromBottom = state.size - Math.floor(grid.indexOf(grid.length-1) / state.size);
+            return (emptyRowFromBottom % 2 === 0) ? (inversions % 2 !== 0) : (inversions % 2 === 0);
+        }
+
+        // Gestión de interacciones
+        function onPointerDown(e) {
+            if (!state.isPlaying) return;
+            const index = parseInt(e.currentTarget.dataset.index);
+
+            if (state.mode === 'classic') {
+                state.draggedIndex = index;
+                e.currentTarget.style.transform = 'scale(1.05)';
+                
+                const onPointerUp = (eUp) => {
+                    const targetEl = document.elementFromPoint(eUp.clientX, eUp.clientY);
+                    const targetPiece = targetEl ? targetEl.closest('.piece') : null;
+                    
+                    if (targetPiece) {
+                        const targetIndex = parseInt(targetPiece.dataset.index);
+                        // Intercambiar posiciones
+                        const temp = state.pieces[state.draggedIndex];
+                        state.pieces[state.draggedIndex] = state.pieces[targetIndex];
+                        state.pieces[targetIndex] = temp;
+                        state.moves++;
+                        movesEl.textContent = state.moves;
+                        renderPieces();
+                        checkVictory();
+                    }
+                    cleanup();
+                };
+
+                const cleanup = () => {
+                    window.removeEventListener('pointerup', onPointerUp);
+                };
+                window.addEventListener('pointerup', onPointerUp);
+
+            } else if (state.mode === 'sliding') {
+                // Lógica del Puzzle Deslizante
+                const emptyIndex = state.pieces.indexOf(state.size * state.size - 1);
+                if (isAdjacent(index, emptyIndex)) {
+                    // Intercambiar pieza con el espacio vacío
+                    state.pieces[emptyIndex] = state.pieces[index];
+                    state.pieces[index] = state.size * state.size - 1;
+                    state.moves++;
+                    movesEl.textContent = state.moves;
+                    renderPieces();
+                    checkVictory();
+                }
+            }
+        }
+
+        function isAdjacent(idx1, idx2) {
+            const r1 = Math.floor(idx1 / state.size), c1 = idx1 % state.size;
+            const r2 = Math.floor(idx2 / state.size), c2 = idx2 % state.size;
+            return (Math.abs(r1 - r2) + Math.abs(c1 - c2)) === 1;
+        }
+
+        // Cronómetro
+        function startTimer() {
+            stopTimer();
+            state.startTime = Date.now();
+            state.timerInterval = setInterval(() => {
+                const diff = Date.now() - state.startTime;
+                const hrs = Math.floor(diff / 3600000).toString().padStart(2, '0');
+                const mins = Math.floor((diff % 3600000) / 60000).toString().padStart(2, '0');
+                const secs = Math.floor((diff % 60000) / 1000).toString().padStart(2, '0');
+                timerEl.textContent = `${hrs}:${mins}:${secs}`;
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if(state.timerInterval) clearInterval(state.timerInterval);
+        }
+
+        // Detección de Victoria e Historial
+        function checkVictory() {
+            const isWin = state.pieces.every((val, idx) => val === idx);
+            if (isWin) {
+                stopTimer();
+                state.isPlaying = false;
+                document.getElementById('final-stats').innerHTML = `Tiempo: ${timerEl.textContent} | Movimientos: ${state.moves}`;
+                document.getElementById('victory-screen').classList.add('show');
+                
+                // Guardar Record en LocalStorage
+                const history = JSON.parse(localStorage.getItem('puzzle_history') || '[]');
+                history.push({ mode: state.mode, size: state.size, time: timerEl.textContent, moves: state.moves, date: new Date().toLocaleDateString() });
+                localStorage.setItem('puzzle_history', JSON.stringify(history));
+            }
+        }
+
+        // Registro del SW para soporte Offline
+        function registerServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('service-worker.js')
+                .then(() => console.log('Service Worker Registrado Exitosamente.'))
+                .catch(err => console.log('Error registrando Service Worker:', err));
+            }
+        }
+    </script>
+</body>
+</html>
