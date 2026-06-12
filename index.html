@@ -105,7 +105,7 @@
             box-shadow: 0 8px 20px rgba(0,0,0,0.5);
         }
 
-        /* ÁREA DE JUEGO AVANZADA */
+        /* ÁREA DE JUEGO */
         #game-header {
             width: 100%;
             position: absolute;
@@ -118,46 +118,44 @@
             z-index: 100;
         }
 
-        /* Visor / Ventana de recorte */
         #viewport {
             width: 100vw;
             height: 100vh;
             overflow: hidden;
             position: relative;
-            background: #16161a;
+            background: #141416;
+            touch-action: none; /* Bloquea gestos nativos del navegador */
         }
 
-        /* Lienzo infinito que sufre Zoom y Paneo */
         #pan-zoom-canvas {
             position: absolute;
             width: 3000px;
             height: 3000px;
-            top: -1000px;
-            left: -1000px;
-            background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 0);
-            background-size: 24px 24px;
-            transform-origin: center center;
+            top: 0;
+            left: 0;
+            background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1.5px, transparent 0);
+            background-size: 30px 30px;
+            transform-origin: 0 0; /* Cambio crítico para transformaciones matemáticas estables */
+            will-change: transform;
         }
 
         .puzzle-piece {
             position: absolute;
             cursor: grab;
             touch-action: none;
-            box-shadow: 0 3px 6px rgba(0,0,0,0.4);
-            /* Borde inicial para piezas sueltas */
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
             outline: 1px solid rgba(255,255,255,0.15);
             outline-offset: -1px;
         }
         .puzzle-piece:active { cursor: grabbing; z-index: 9999 !important; }
 
-        /* Animación Flash para Uniones Metálicas */
         @keyframes flash-union {
             0% { filter: brightness(1); box-shadow: 0 0 0px var(--accent-color); }
-            50% { filter: brightness(1.6); box-shadow: 0 0 25px var(--accent-color); z-index: 999; }
-            100% { filter: brightness(1); box-shadow: 0 3px 6px rgba(0,0,0,0.4); }
+            50% { filter: brightness(1.5); box-shadow: 0 0 25px var(--accent-color); }
+            100% { filter: brightness(1); box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
         }
         .flash-active {
-            animation: flash-union 0.4s ease-out-in;
+            animation: flash-union 0.35s ease-out;
         }
 
         #victory-layer {
@@ -171,19 +169,21 @@
             z-index: 10000;
         }
 
-        /* Instrucción de Zoom en Pantalla */
         #zoom-indicator {
             position: absolute;
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0,0,0,0.6);
-            padding: 6px 14px;
+            background: rgba(0,0,0,0.7);
+            padding: 6px 16px;
             border-radius: 20px;
             font-size: 0.8rem;
             pointer-events: none;
-            color: #aaa;
+            color: #ccc;
             z-index: 100;
+            text-align: center;
+            width: 90%;
+            max-width: 360px;
         }
     </style>
 </head>
@@ -228,7 +228,7 @@
             <div id="pan-zoom-canvas"></div>
         </div>
 
-        <div id="zoom-indicator">Pinch / Rueda para Zoom | Un dedo para mover piezas o fondo</div>
+        <div id="zoom-indicator">Usa dos dedos (pinch) para Zoom | Un dedo para mover fondo o piezas</div>
     </div>
 
     <div id="victory-layer">
@@ -248,11 +248,10 @@
             moves: 0,
             startTime: null,
             timerInterval: null,
-            // Estado de Zoom e Inercia
+            // Coordenadas de la cámara/lienzo
             zoom: 1,
             panX: 0,
-            panY: 0,
-            isPanning: false
+            panY: 0
         };
 
         const canvas = document.getElementById('pan-zoom-canvas');
@@ -260,7 +259,7 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             setupMenuEvents();
-            setupZoomAndPan();
+            setupAdvancedGestures();
         });
 
         function showScreen(screenId) {
@@ -317,66 +316,127 @@
             showScreen('screen-preview');
         }
 
-        // CONTROL DE ZOOM Y PANEO (LIENZO)
-        function setupZoomAndPan() {
-            let startDist = 0;
-            let initialZoom = 1;
+        // MOTOR RECONOCEDOR DE GESTOS AVANZADOS (PINCH ZOOM & MULTITOUCH PAN)
+        function setupAdvancedGestures() {
+            let activePointers = {}; // Registro de dedos tocando la pantalla
             let isDraggingBg = false;
-            let startX, startY;
+            let startPanX = 0, startPanY = 0;
+            let startTouchX = 0, startTouchY = 0;
+            let startPinchDist = 0;
+            let startZoom = 1;
 
-            // Zoom con Rueda del Ratón
+            // --- Soporte de Escritorio (Rueda del ratón) ---
             viewport.addEventListener('wheel', (e) => {
                 e.preventDefault();
-                const zoomFactor = 0.1;
-                if (e.deltaY < 0) state.zoom = Math.min(state.zoom + zoomFactor, 3);
-                else state.zoom = Math.max(state.zoom - zoomFactor, 0.4);
+                const zoomFactor = 0.08;
+                let nextZoom = e.deltaY < 0 ? state.zoom + zoomFactor : state.zoom - zoomFactor;
+                nextZoom = Math.max(0.3, Math.min(nextZoom, 3));
+                
+                // Centrar zoom en el puntero del ratón
+                const rect = viewport.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                
+                state.panX = mouseX - (mouseX - state.panX) * (nextZoom / state.zoom);
+                state.panY = mouseY - (mouseY - state.panY) * (nextZoom / state.zoom);
+                state.zoom = nextZoom;
+                
                 updateCanvasTransform();
             }, { passive: false });
 
-            // Eventos táctiles y ratón en el fondo del Viewport
+            // --- Motor Unificado de Punteros (Móvil + Mouse) ---
             viewport.addEventListener('pointerdown', (e) => {
+                activePointers[e.pointerId] = e;
+                const pointerCount = Object.keys(activePointers).length;
+
+                // Si pulsamos en el fondo vacío o el canvas puro, arrastramos el mapa
                 if (e.target === viewport || e.target === canvas) {
-                    isDraggingBg = true;
-                    startX = e.clientX - state.panX;
-                    startY = e.clientY - state.panY;
-                    viewport.setPointerCapture(e.pointerId);
+                    if (pointerCount === 1) {
+                        isDraggingBg = true;
+                        startPanX = state.panX;
+                        startPanY = state.panY;
+                        startTouchX = e.clientX;
+                        startTouchY = e.clientY;
+                    }
+                }
+
+                // Configuración inicial de Pinch Zoom al meter el segundo dedo
+                if (pointerCount === 2) {
+                    isDraggingBg = false; // Cancelamos arrastre simple
+                    const pointers = Object.values(activePointers);
+                    startPinchDist = Math.hypot(pointers[0].clientX - pointers[1].clientX, pointers[0].clientY - pointers[1].clientY);
+                    startZoom = state.zoom;
+                    
+                    // Guardar el centro del pinch para hacer zoom centrado entre los dos dedos
+                    startTouchX = (pointers[0].clientX + pointers[1].clientX) / 2;
+                    startTouchY = (pointers[0].clientY + pointers[1].clientY) / 2;
+                    startPanX = state.panX;
+                    startPanY = state.panY;
                 }
             });
 
             viewport.addEventListener('pointermove', (e) => {
-                // Soporte Multi-touch (Pinch Zoom)
-                if (e.pointerType === 'touch') {
-                    // Simulación simplificada nativa de pinch-to-zoom mediante eventos nativos si se requiere,
-                    // optimizado aquí para paneo fluido de un dedo.
+                if (!activePointers[e.pointerId]) return;
+                activePointers[e.pointerId] = e; // Actualizar coordenadas del dedo actual
+                
+                const pointers = Object.values(activePointers);
+                const pointerCount = pointers.length;
+
+                // 1. Paneo fluido continuo con un dedo
+                if (isDraggingBg && pointerCount === 1) {
+                    const dx = e.clientX - startTouchX;
+                    const dy = e.clientY - startTouchY;
+                    state.panX = startPanX + dx;
+                    state.panY = startPanY + dy;
+                    updateCanvasTransform();
                 }
 
-                if (isDraggingBg) {
-                    state.panX = e.clientX - startX;
-                    state.panY = e.clientY - startY;
+                // 2. Pinch to Zoom real con dos dedos geométricos
+                if (pointerCount === 2) {
+                    const currentDist = Math.hypot(pointers[0].clientX - pointers[1].clientX, pointers[0].clientY - pointers[1].clientY);
+                    const scaleChange = currentDist / startPinchDist;
+                    let nextZoom = startZoom * scaleChange;
+                    nextZoom = Math.max(0.3, Math.min(nextZoom, 3));
+
+                    const midX = (pointers[0].clientX + pointers[1].clientX) / 2;
+                    const midY = (pointers[0].clientY + pointers[1].clientY) / 2;
+
+                    // Ajustar paneo matemático para que la imagen no se desplace de las puntas de los dedos
+                    state.panX = midX - (midX - startPanX) * (nextZoom / startZoom);
+                    state.panY = midY - (midY - startPanY) * (nextZoom / startZoom);
+                    state.zoom = nextZoom;
+                    
                     updateCanvasTransform();
                 }
             });
 
-            const stopBgDrag = (e) => {
-                if (isDraggingBg) {
+            const removePointer = (e) => {
+                delete activePointers[e.pointerId];
+                if (Object.keys(activePointers).length < 1) {
                     isDraggingBg = false;
-                    try { viewport.releasePointerCapture(e.pointerId); } catch(err){}
                 }
             };
-            viewport.addEventListener('pointerup', stopBgDrag);
-            viewport.addEventListener('pointercancel', stopBgDrag);
+
+            viewport.addEventListener('pointerup', removePointer);
+            viewport.addEventListener('pointercancel', removePointer);
+            viewport.addEventListener('pointerleave', removePointer);
         }
 
         function updateCanvasTransform() {
             canvas.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
         }
 
-        // MOTOR DE JUEGO (REDISEÑADO CON ADYACENCIA ESTRICTA)
+        // MOTOR DE JUEGO
         function initGameplay() {
             state.size = parseInt(document.getElementById('cfg-size').value);
             state.moves = 0;
-            state.zoom = 1; state.panX = 0; state.panY = 0;
+            
+            // Centrar el lienzo de 3000x3000px en la pantalla del móvil automáticamente al arrancar
+            state.zoom = 0.8;
+            state.panX = (window.innerWidth - (3000 * state.zoom)) / 2;
+            state.panY = (window.innerHeight - (600 * state.zoom)) / 3;
             updateCanvasTransform();
+            
             document.getElementById('txt-moves').textContent = "0";
             
             const docEl = document.documentElement;
@@ -389,12 +449,9 @@
 
         function buildPuzzleBoard() {
             canvas.innerHTML = '';
-            
-            // Forzar tablero central a un tamaño fijo dentro del súper lienzo
             const boardSize = 600; 
             const pSize = boardSize / state.size;
             
-            // Colocar el tablero justo en el centro del canvas de 3000x3000px
             const offsetX = (3000 - boardSize) / 2;
             const offsetY = (3000 - boardSize) / 2;
 
@@ -412,17 +469,20 @@
                     piece.style.backgroundSize = `${boardSize}px ${boardSize}px`;
                     piece.style.backgroundPosition = `-${c * pSize}px -${r * pSize}px`;
                     
-                    // Destino absoluto dentro del lienzo
                     const targetX = offsetX + (c * pSize);
                     const targetY = offsetY + (r * pSize);
 
-                    // Dispersión masiva por todo el lienzo de trabajo
-                    const randomX = offsetX - 400 + Math.random() * (boardSize + 800 - pSize);
-                    const randomY = offsetY + boardSize + 100 + Math.random() * 400;
+                    // Dispersión controlada a los costados y abajo del tablero central
+                    let randomX, randomY;
+                    if(Math.random() > 0.5){
+                        randomX = offsetX - 350 + Math.random() * 200;
+                    } else {
+                        randomX = offsetX + boardSize + 100 + Math.random() * 200;
+                    }
+                    randomY = offsetY - 100 + Math.random() * (boardSize + 200);
                     
                     piece.style.left = `${randomX}px`;
                     piece.style.top = `${randomY}px`;
-
                     piece.dataset.id = index;
                     canvas.appendChild(piece);
 
@@ -450,15 +510,14 @@
             const groupIdx = state.groups.findIndex(g => g.includes(clickedPiece.id));
             const groupIds = state.groups[groupIdx];
 
-            // Llevar todo el bloque al frente visual
             groupIds.forEach(id => canvas.appendChild(state.pieces[id].el));
 
-            // Ajustar diferenciales considerando el nivel de Zoom actual del lienzo
             const startX = e.clientX;
             const startY = e.clientY;
             const initialPos = groupIds.map(id => ({ id: id, x: state.pieces[id].x, y: state.pieces[id].y }));
 
             function onPointerMove(ev) {
+                // El arrastre de las piezas ahora respeta perfectamente el nivel de zoom dinámico
                 const dx = (ev.clientX - startX) / state.zoom;
                 const dy = (ev.clientY - startY) / state.zoom;
 
@@ -487,9 +546,8 @@
 
         function checkGroupUnions(currentGroupIdx) {
             const currentGroup = state.groups[currentGroupIdx];
-            const tolerance = 20; 
+            const tolerance = 22; 
             let unionFound = false;
-            let targetGroupIdx = -1;
 
             for (let i = 0; i < state.groups.length; i++) {
                 if (i === currentGroupIdx) continue;
@@ -500,7 +558,6 @@
                         const p1 = state.pieces[pId1];
                         const p2 = state.pieces[pId2];
 
-                        // REQUISITO: Solo adyacencia estricta horizontal o vertical (Diferencia de c o r = 1, no diagonal)
                         const isHorizontalNeighbor = (Math.abs(p1.c - p2.c) === 1 && p1.r === p2.r);
                         const isVerticalNeighbor = (Math.abs(p1.r - p2.r) === 1 && p1.c === p2.c);
 
@@ -513,7 +570,6 @@
 
                         if (Math.abs(currentDx - expectedDx) < tolerance && Math.abs(currentDy - expectedDy) < tolerance) {
                             
-                            // Alinear perfectamente el bloque entero con el otro grupo
                             const shiftX = p2.x + expectedDx - p1.x;
                             const shiftY = p2.y + expectedDy - p1.y;
 
@@ -525,7 +581,6 @@
                             });
 
                             state.groups[i] = otherGroup.concat(currentGroup);
-                            targetGroupIdx = i;
                             state.groups.splice(currentGroupIdx, 1);
                             unionFound = true;
                             break;
@@ -536,26 +591,17 @@
                 if (unionFound) break;
             }
 
-            // Si hubo unión con éxito, ejecutar efectos visuales avanzados
-            if (unionFound && targetGroupIdx !== -1) {
-                const finalGroup = state.groups[state.groups.findIndex(g => g.includes(currentGroup[0]))];
-                
-                // 1. Lanzar efecto Flash a TODO el bloque unificado
+            if (unionFound) {
+                const finalGroup = state.groups.find(g => g.includes(currentGroup[0]));
                 finalGroup.forEach(id => {
                     const el = state.pieces[id].el;
                     el.classList.remove('flash-active');
-                    void el.offsetWidth; // Truco CSS para resetear animación
-                    el.style.animation = 'none';
-                    el.offsetHeight; /* trigger reflow */
-                    el.style.animation = null;
+                    void el.offsetWidth; 
                     el.classList.add('flash-active');
                 });
-
-                // 2. Romper bordes divisorios internos del bloque
                 hideInternalBorders(finalGroup);
             }
 
-            // Ajustar al tablero maestro final si todo el conjunto está cerca del origen
             const activeGroupIdx = state.groups.findIndex(g => g.includes(currentGroup[0]));
             const activeGroup = state.groups[activeGroupIdx];
             const checkPiece = state.pieces[activeGroup[0]];
@@ -571,7 +617,6 @@
                     p.el.style.left = `${p.tx}px`;
                     p.el.style.top = `${p.ty}px`;
                     p.el.style.boxShadow = "none";
-                    // Quitar todos los bordes externos/internos al asentarse en la meta
                     p.el.style.outline = "none"; 
                 });
             }
@@ -586,7 +631,6 @@
             }
         }
 
-        // Función inteligente para remover bordes de piezas acopladas
         function hideInternalBorders(groupIds) {
             groupIds.forEach(id1 => {
                 const p1 = state.pieces[id1];
@@ -600,7 +644,6 @@
                     if (p1.r === p2.r && p1.c + 1 === p2.c) rightMatch = true;
                 });
 
-                // Crear un recorte u ocultamiento selectivo de bordes mediante propiedades de outline/border dinámicas
                 p1.el.style.outline = "none";
                 p1.el.style.borderTop = topMatch ? "none" : "1px solid rgba(255,255,255,0.2)";
                 p1.el.style.borderBottom = bottomMatch ? "none" : "1px solid rgba(255,255,255,0.2)";
@@ -609,7 +652,6 @@
             });
         }
 
-        // CRONÓMETRO
         function startTimer() {
             stopTimer();
             state.startTime = Date.now();
