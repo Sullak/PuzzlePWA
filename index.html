@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Puzzle Master Pro - v1.3.3</title>
+    <title>Puzzle Master Pro - v1.3.4</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1a1a">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -205,7 +205,7 @@
 
     <div id="screen-menu" class="screen active">
         <h1>Puzzle Master Pro</h1>
-        <div class="version-tag">v1.3.3 - Silhouette Shift</div>
+        <div class="version-tag">v1.3.4 - Vectorial Push-Back</div>
         <div class="card">
             <div class="control-group">
                 <label>Modo de Juego</label>
@@ -456,7 +456,7 @@
                 state.panX = (window.innerWidth - (2000 * state.zoom)) / 2;
                 state.panY = (window.innerHeight - (600 * state.zoom)) / 3;
             } else {
-                zoomIndicator.innerHTML = "Intercambio v1.3.3: Mapeo posicional completo de siluetas asimétricas.";
+                zoomIndicator.innerHTML = "Intercambio v1.3.4: Algoritmo físico Push-Back de fluidos rígidos.";
                 state.zoom = Math.min(window.innerWidth / 620, window.innerHeight / 720, 1);
                 state.panX = (window.innerWidth - (600 * state.zoom)) / 2;
                 state.panY = (window.innerHeight - (600 * state.zoom)) / 2 + 30;
@@ -624,20 +624,16 @@
                     }
 
                     if (moveIsValid) {
-                        // PASO 1: Mapear la huella física exacta de ORIGEN que dejará el bloque móvil libre
-                        const sourceCoordinates = groupIds.map(id => ({
-                            cx: state.pieces[id].currentGridX,
-                            cy: state.pieces[id].currentGridY
-                        })).sort((a,b) => a.cy - b.cy || a.cx - b.cx); // Orden estándar: arriba-abajo, izq-der
-
-                        // PASO 2: Calcular la huella de DESTINO proyectada
+                        // PASO 1: Simular y guardar las futuras posiciones estables del bloque móvil
                         const incomingTargetCells = groupIds.map(id => ({
                             id: id,
                             toCx: state.pieces[id].currentGridX + cellDeltaX,
                             toCy: state.pieces[id].currentGridY + cellDeltaY
                         }));
 
-                        // PASO 3: Desacoplar atómicamente bloques ajenos interceptados por el destino
+                        const futureMobilePositions = incomingTargetCells.map(c => `${c.toCx},${c.toCy}`);
+
+                        // PASO 2: Desacoplar atómicamente piezas ajenas interceptadas por la zona de destino
                         state.pieces.forEach(p => {
                             if (!groupIds.includes(p.id)) {
                                 const isOcupied = incomingTargetCells.some(c => p.currentGridX === c.toCx && p.currentGridY === c.toCy);
@@ -651,22 +647,31 @@
                             }
                         });
 
-                        // PASO 4: Capturar y ordenar estrictamente las piezas salientes reales evacuadas
+                        // PASO 3: Seleccionar las piezas desalojadas
                         const displacedPieces = state.pieces.filter(p => 
                             !groupIds.includes(p.id) && 
                             incomingTargetCells.some(c => p.currentGridX === c.toCx && p.currentGridY === c.toCy)
-                        ).sort((a,b) => a.currentGridY - b.currentGridY || a.currentGridX - b.currentGridX);
+                        );
 
-                        // PASO 5: ASIGNACIÓN MATRICIAL SILHOUETTE SHIFT (Mapeo Posicional Puro)
-                        // A cada pieza evacuada se le asigna un asiento vacío de la huella de origen en orden simétrico,
-                        // resolviendo el error de "piezas que deben saltar múltiples espacios ocultándose bajo el bloque".
-                        displacedPieces.forEach((p, index) => {
-                            const targetSeat = sourceCoordinates[index];
-                            p.nextGridX = targetSeat.cx;
-                            p.nextGridY = targetSeat.cy;
+                        // PASO 4: ALGORITMO PUSH-BACK VECTORIAL PURO
+                        // Se aplica el vector inverso. Si cae bajo la sombra final del bloque móvil, 
+                        // se lo empuja iterativamente en la dirección del vector inverso (-cellDeltaX, -cellDeltaY)
+                        // hasta que quede depositado exactamente en los huecos libres que dejó la cola del bloque.
+                        displacedPieces.forEach(p => {
+                            let candidateX = p.currentGridX - cellDeltaX;
+                            let candidateY = p.currentGridY - cellDeltaY;
+
+                            // Loop de colisión física contra el bloque móvil
+                            while (futureMobilePositions.includes(`${candidateX},${candidateY}`)) {
+                                candidateX -= cellDeltaX;
+                                candidateY -= cellDeltaY;
+                            }
+
+                            p.nextGridX = candidateX;
+                            p.nextGridY = candidateY;
                         });
 
-                        // PASO 6: Traslación y refresco visual síncrono total
+                        // PASO 5: Reubicación física coordinada y síncrona en la matriz
                         incomingTargetCells.forEach(cell => {
                             const p = state.pieces[cell.id];
                             p.currentGridX = cell.toCx;
@@ -688,7 +693,7 @@
                             p.el.style.top = `${p.y}px`;
                         });
 
-                        // PASO 7: Consolidar y fusionar uniones válidas en la nueva configuración estática
+                        // PASO 6: Recálculo absoluto de uniones lógicas estables
                         rebuildAllGroupsFromScratch();
 
                         groupIds.forEach(id => {
@@ -699,7 +704,7 @@
                         });
 
                     } else {
-                        // Reversión elástica segura si el arrastre fue cancelado o inválido
+                        // Resorte elástico si no se completa un movimiento de grilla entero
                         groupIds.forEach(id => {
                             state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
                             state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
