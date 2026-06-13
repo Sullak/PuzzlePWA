@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Puzzle Master Pro - v1.3.2</title>
+    <title>Puzzle Master Pro - v1.3.3</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1a1a">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -205,7 +205,7 @@
 
     <div id="screen-menu" class="screen active">
         <h1>Puzzle Master Pro</h1>
-        <div class="version-tag">v1.3.2 - Atomic Decoupling</div>
+        <div class="version-tag">v1.3.3 - Silhouette Shift</div>
         <div class="card">
             <div class="control-group">
                 <label>Modo de Juego</label>
@@ -456,7 +456,7 @@
                 state.panX = (window.innerWidth - (2000 * state.zoom)) / 2;
                 state.panY = (window.innerHeight - (600 * state.zoom)) / 3;
             } else {
-                zoomIndicator.innerHTML = "Intercambio v1.3.2: Desacoplamiento atómico de siluetas asimétricas.";
+                zoomIndicator.innerHTML = "Intercambio v1.3.3: Mapeo posicional completo de siluetas asimétricas.";
                 state.zoom = Math.min(window.innerWidth / 620, window.innerHeight / 720, 1);
                 state.panX = (window.innerWidth - (600 * state.zoom)) / 2;
                 state.panY = (window.innerHeight - (600 * state.zoom)) / 2 + 30;
@@ -624,47 +624,49 @@
                     }
 
                     if (moveIsValid) {
-                        // PASO 1: Calcular la instantánea de celdas destino requeridas por el bloque móvil
+                        // PASO 1: Mapear la huella física exacta de ORIGEN que dejará el bloque móvil libre
+                        const sourceCoordinates = groupIds.map(id => ({
+                            cx: state.pieces[id].currentGridX,
+                            cy: state.pieces[id].currentGridY
+                        })).sort((a,b) => a.cy - b.cy || a.cx - b.cx); // Orden estándar: arriba-abajo, izq-der
+
+                        // PASO 2: Calcular la huella de DESTINO proyectada
                         const incomingTargetCells = groupIds.map(id => ({
                             id: id,
-                            fromCx: state.pieces[id].currentGridX,
-                            fromCy: state.pieces[id].currentGridY,
                             toCx: state.pieces[id].currentGridX + cellDeltaX,
                             toCy: state.pieces[id].currentGridY + cellDeltaY
                         }));
 
-                        // PASO 2: REGLAS 3 Y 4 REPLANTEADAS (Desacoplamiento Atómico Obligatorio)
-                        // Rompemos cualquier bloque ajeno que viva en las celdas de destino ANTES del intercambio.
-                        // Esto previene que piezas salientes arrastren partes de bloques que no fueron invadidas.
+                        // PASO 3: Desacoplar atómicamente bloques ajenos interceptados por el destino
                         state.pieces.forEach(p => {
                             if (!groupIds.includes(p.id)) {
                                 const isOcupied = incomingTargetCells.some(c => p.currentGridX === c.toCx && p.currentGridY === c.toCy);
                                 if (isOcupied) {
-                                    // Separar la pieza de su grupo actual (la dejamos como un bloque individual temporalmente)
                                     state.groups = state.groups.map(g => {
-                                        if (g.includes(p.id)) {
-                                            return g.filter(id => id !== p.id); // Remover de su grupo antiguo
-                                        }
+                                        if (g.includes(p.id)) return g.filter(id => id !== p.id);
                                         return g;
                                     }).filter(g => g.length > 0);
-                                    state.groups.push([p.id]); // Registrarla en su propia celda única
+                                    state.groups.push([p.id]); 
                                 }
                             }
                         });
 
-                        // PASO 3: Ahora que el destino está sanitizado y fragmentado, capturamos las piezas salientes exactas
+                        // PASO 4: Capturar y ordenar estrictamente las piezas salientes reales evacuadas
                         const displacedPieces = state.pieces.filter(p => 
                             !groupIds.includes(p.id) && 
                             incomingTargetCells.some(c => p.currentGridX === c.toCx && p.currentGridY === c.toCy)
-                        );
+                        ).sort((a,b) => a.currentGridY - b.currentGridY || a.currentGridX - b.currentGridX);
 
-                        // PASO 4: Aplicar traslación simétrica invertida estricta
-                        displacedPieces.forEach(p => {
-                            p.nextGridX = p.currentGridX - cellDeltaX;
-                            p.nextGridY = p.currentGridY - cellDeltaY;
+                        // PASO 5: ASIGNACIÓN MATRICIAL SILHOUETTE SHIFT (Mapeo Posicional Puro)
+                        // A cada pieza evacuada se le asigna un asiento vacío de la huella de origen en orden simétrico,
+                        // resolviendo el error de "piezas que deben saltar múltiples espacios ocultándose bajo el bloque".
+                        displacedPieces.forEach((p, index) => {
+                            const targetSeat = sourceCoordinates[index];
+                            p.nextGridX = targetSeat.cx;
+                            p.nextGridY = targetSeat.cy;
                         });
 
-                        // PASO 5: Reubicación física y lógica simultánea en masa
+                        // PASO 6: Traslación y refresco visual síncrono total
                         incomingTargetCells.forEach(cell => {
                             const p = state.pieces[cell.id];
                             p.currentGridX = cell.toCx;
@@ -686,7 +688,7 @@
                             p.el.style.top = `${p.y}px`;
                         });
 
-                        // PASO 6: Reconstruir uniones estables desde cero sobre la matriz en reposo absoluto
+                        // PASO 7: Consolidar y fusionar uniones válidas en la nueva configuración estática
                         rebuildAllGroupsFromScratch();
 
                         groupIds.forEach(id => {
@@ -697,7 +699,7 @@
                         });
 
                     } else {
-                        // Reversión elástica limpia si el movimiento no superó el umbral de celda
+                        // Reversión elástica segura si el arrastre fue cancelado o inválido
                         groupIds.forEach(id => {
                             state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
                             state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
