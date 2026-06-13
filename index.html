@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Puzzle Master Pro - v1.3.1</title>
+    <title>Puzzle Master Pro - v1.3.2</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1a1a">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -205,7 +205,7 @@
 
     <div id="screen-menu" class="screen active">
         <h1>Puzzle Master Pro</h1>
-        <div class="version-tag">v1.3.1 - Isolation Layer</div>
+        <div class="version-tag">v1.3.2 - Atomic Decoupling</div>
         <div class="card">
             <div class="control-group">
                 <label>Modo de Juego</label>
@@ -456,7 +456,7 @@
                 state.panX = (window.innerWidth - (2000 * state.zoom)) / 2;
                 state.panY = (window.innerHeight - (600 * state.zoom)) / 3;
             } else {
-                zoomIndicator.innerHTML = "Intercambio v1.3.1: Aislamiento transaccional estricto de celdas.";
+                zoomIndicator.innerHTML = "Intercambio v1.3.2: Desacoplamiento atómico de siluetas asimétricas.";
                 state.zoom = Math.min(window.innerWidth / 620, window.innerHeight / 720, 1);
                 state.panX = (window.innerWidth - (600 * state.zoom)) / 2;
                 state.panY = (window.innerHeight - (600 * state.zoom)) / 2 + 30;
@@ -549,7 +549,6 @@
             e.preventDefault();
             
             const groupIdx = state.groups.findIndex(g => g.includes(clickedPiece.id));
-            // COPIA INMUTABLE: Aislamos los IDs del bloque movil ANTES de cualquier mutacion o fusion
             const groupIds = [...state.groups[groupIdx]];
 
             groupIds.forEach(id => canvas.appendChild(state.pieces[id].el));
@@ -625,7 +624,7 @@
                     }
 
                     if (moveIsValid) {
-                        // PASO 1: Congelar la instantánea de celdas destino ocupadas por la silueta entrante
+                        // PASO 1: Calcular la instantánea de celdas destino requeridas por el bloque móvil
                         const incomingTargetCells = groupIds.map(id => ({
                             id: id,
                             fromCx: state.pieces[id].currentGridX,
@@ -634,19 +633,38 @@
                             toCy: state.pieces[id].currentGridY + cellDeltaY
                         }));
 
-                        // PASO 2: Identificar las piezas desalojadas usando exclusión estricta sobre la copia estática
+                        // PASO 2: REGLAS 3 Y 4 REPLANTEADAS (Desacoplamiento Atómico Obligatorio)
+                        // Rompemos cualquier bloque ajeno que viva en las celdas de destino ANTES del intercambio.
+                        // Esto previene que piezas salientes arrastren partes de bloques que no fueron invadidas.
+                        state.pieces.forEach(p => {
+                            if (!groupIds.includes(p.id)) {
+                                const isOcupied = incomingTargetCells.some(c => p.currentGridX === c.toCx && p.currentGridY === c.toCy);
+                                if (isOcupied) {
+                                    // Separar la pieza de su grupo actual (la dejamos como un bloque individual temporalmente)
+                                    state.groups = state.groups.map(g => {
+                                        if (g.includes(p.id)) {
+                                            return g.filter(id => id !== p.id); // Remover de su grupo antiguo
+                                        }
+                                        return g;
+                                    }).filter(g => g.length > 0);
+                                    state.groups.push([p.id]); // Registrarla en su propia celda única
+                                }
+                            }
+                        });
+
+                        // PASO 3: Ahora que el destino está sanitizado y fragmentado, capturamos las piezas salientes exactas
                         const displacedPieces = state.pieces.filter(p => 
                             !groupIds.includes(p.id) && 
                             incomingTargetCells.some(c => p.currentGridX === c.toCx && p.currentGridY === c.toCy)
                         );
 
-                        // PASO 3: Traslación simétrica exacta inversa sobre la memoria transaccional
+                        // PASO 4: Aplicar traslación simétrica invertida estricta
                         displacedPieces.forEach(p => {
                             p.nextGridX = p.currentGridX - cellDeltaX;
                             p.nextGridY = p.currentGridY - cellDeltaY;
                         });
 
-                        // PASO 4: Asentamiento simultáneo y renderizado físico coordinado
+                        // PASO 5: Reubicación física y lógica simultánea en masa
                         incomingTargetCells.forEach(cell => {
                             const p = state.pieces[cell.id];
                             p.currentGridX = cell.toCx;
@@ -668,7 +686,7 @@
                             p.el.style.top = `${p.y}px`;
                         });
 
-                        // PASO 5: Capa de aislamiento total. El escaneo de adyacencias ocurre sobre una matriz estática y limpia.
+                        // PASO 6: Reconstruir uniones estables desde cero sobre la matriz en reposo absoluto
                         rebuildAllGroupsFromScratch();
 
                         groupIds.forEach(id => {
@@ -679,7 +697,7 @@
                         });
 
                     } else {
-                        // Reversión elástica segura si no hubo cambio neto de casilla
+                        // Reversión elástica limpia si el movimiento no superó el umbral de celda
                         groupIds.forEach(id => {
                             state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
                             state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
@@ -695,7 +713,6 @@
         }
 
         function rebuildAllGroupsFromScratch() {
-            // Inicializar cada pieza en su propio grupo atómico
             state.groups = state.pieces.map(p => [p.id]);
 
             let mergedAny = true;
@@ -723,7 +740,6 @@
                     const p1 = state.pieces[id1];
                     const p2 = state.pieces[id2];
 
-                    // Comprobar vecindad nativa en la imagen original
                     const isHorizontalNeighbor = (Math.abs(p1.origC - p2.origC) === 1 && p1.origR === p2.origR);
                     const isVerticalNeighbor = (Math.abs(p1.origR - p2.origR) === 1 && p1.origC === p2.origC);
 
@@ -731,7 +747,6 @@
                         const expectedGridDx = p1.origC - p2.origC;
                         const expectedGridDy = p1.origR - p2.origR;
                         
-                        // Comparar directamente con la posición actual en la grilla matemática
                         const currentGridDx = p1.currentGridX - p2.currentGridX;
                         const currentGridDy = p1.currentGridY - p2.currentGridY;
 
@@ -770,7 +785,7 @@
                         const currentDx = p1.x - p2.x;
                         const currentDy = p1.y - p2.y;
 
-                        if (Math.abs(currentDx - expectedDx) < tolerance && Math.abs(currentDy - expectedDy) < tolerance) {
+                        if (Math.abs(currentDx - expectedDx) < tolerance && Math.abs(currentDx - expectedDx) < tolerance) {
                             const shiftX = p2.x + expectedDx - p1.x;
                             const shiftY = p2.y + expectedDy - p1.y;
 
