@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Puzzle Master Pro</title>
+    <title>Puzzle Master Pro - v1.2.0</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1a1a">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -49,7 +49,8 @@
         }
         .screen.active { display: flex; }
 
-        h1 { font-size: 2rem; margin-bottom: 15px; text-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        h1 { font-size: 2rem; margin-bottom: 5px; text-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .version-tag { font-size: 0.85rem; color: var(--accent-color); margin-bottom: 15px; font-weight: bold; letter-spacing: 1px; }
 
         .card {
             background: var(--surface-color);
@@ -204,6 +205,7 @@
 
     <div id="screen-menu" class="screen active">
         <h1>Puzzle Master Pro</h1>
+        <div class="version-tag">v1.2.0 - Stable Grid</div>
         <div class="card">
             <div class="control-group">
                 <label>Modo de Juego</label>
@@ -249,7 +251,7 @@
             <div id="pan-zoom-canvas"></div>
         </div>
 
-        <div id="zoom-indicator">Cargando modo...</div>
+        <div id="zoom-indicator">Cargando...</div>
     </div>
 
     <div id="victory-layer">
@@ -454,7 +456,7 @@
                 state.panX = (window.innerWidth - (2000 * state.zoom)) / 2;
                 state.panY = (window.innerHeight - (600 * state.zoom)) / 3;
             } else {
-                zoomIndicator.innerHTML = "Modo Intercambio Fijo: Desplaza el bloque para permutar la forma exacta";
+                zoomIndicator.innerHTML = "Modo Intercambio Fijo: Desplaza el bloque para permutar la forma exacta sin huecos";
                 state.zoom = Math.min(window.innerWidth / 620, window.innerHeight / 720, 1);
                 state.panX = (window.innerWidth - (600 * state.zoom)) / 2;
                 state.panY = (window.innerHeight - (600 * state.zoom)) / 2 + 30;
@@ -498,9 +500,10 @@
 
                     state.pieces.push({
                         el: piece, id: index,
-                        r: r, c: c,
+                        origR: r, origC: c, // Posición real final correcta
                         tx: targetX, ty: targetY,
-                        x: targetX, y: targetY
+                        x: targetX, y: targetY,
+                        currentGridX: c, currentGridY: r // Ubicación lógica actual en celdas
                     });
                     state.groups.push([index]);
                     index++;
@@ -519,19 +522,22 @@
                     canvas.appendChild(p.el);
                 });
             } else {
-                const gridPositions = state.pieces.map(p => ({ x: p.tx, y: p.ty }));
-                for (let i = gridPositions.length - 1; i > 0; i--) {
+                // Modo Intercambio: Barajar coordenadas lógicas de matriz de forma uniforme
+                const cellIndices = state.pieces.map(p => ({ cx: p.currentGridX, cy: p.currentGridY }));
+                for (let i = cellIndices.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
-                    [gridPositions[i], gridPositions[j]] = [gridPositions[j], gridPositions[i]];
+                    [cellIndices[i], cellIndices[j]] = [cellIndices[j], cellIndices[i]];
                 }
                 state.pieces.forEach((p, i) => {
-                    p.x = gridPositions[i].x;
-                    p.y = gridPositions[i].y;
+                    p.currentGridX = cellIndices[i].cx;
+                    p.currentGridY = cellIndices[i].cy;
+                    p.x = p.currentGridX * pSize;
+                    p.y = p.currentGridY * pSize;
                     p.el.style.left = `${p.x}px`;
                     p.el.style.top = `${p.y}px`;
                     canvas.appendChild(p.el);
                 });
-                rebuildAllGroupsFromScratch(); // Inicializar bordes internos y estados de grupo
+                rebuildAllGroupsFromScratch();
             }
 
             state.pieces.forEach(p => {
@@ -577,25 +583,24 @@
                     });
                     checkGroupUnionslibre(groupIdx);
                 } else {
-                    // MÓDULO INTERCAMBIO MEJORADO Y BLINDADO ANTIBUGS
+                    // REVOLUCIONARIO MOTOR MATRICIAL DE PERMUTACIÓN UNO A UNO (CERO SUPERPOSICIONES)
                     const pSize = 600 / state.size;
                     
                     const finalX = parseFloat(clickedPiece.el.style.left);
                     const finalY = parseFloat(clickedPiece.el.style.top);
                     
+                    // Cuántas celdas netas se desplazó el líder
                     const cellDeltaX = Math.round((finalX - clickedPiece.x) / pSize);
                     const cellDeltaY = Math.round((finalY - clickedPiece.y) / pSize);
 
-                    const shiftX = cellDeltaX * pSize;
-                    const shiftY = cellDeltaY * pSize;
-
                     let moveIsValid = (cellDeltaX !== 0 || cellDeltaY !== 0);
 
+                    // Validar fronteras físicas del tablero completo
                     if (moveIsValid) {
                         for (let id of groupIds) {
-                            const nextX = state.pieces[id].x + shiftX;
-                            const nextY = state.pieces[id].y + shiftY;
-                            if (nextX < 0 || nextX >= 599 || nextY < 0 || nextY >= 599) {
+                            const nX = state.pieces[id].currentGridX + cellDeltaX;
+                            const nY = state.pieces[id].currentGridY + cellDeltaY;
+                            if (nX < 0 || nX >= state.size || nY < 0 || nY >= state.size) {
                                 moveIsValid = false;
                                 break;
                             }
@@ -603,41 +608,64 @@
                     }
 
                     if (moveIsValid) {
-                        // 1. Clonar mapa del tablero de forma estática antes de desplazar nada (Previene el desajuste de bucles)
-                        const currentBoardMap = state.pieces.map(p => ({ id: p.id, x: p.x, y: p.y }));
-
-                        // 2. Definir las coordenadas destino que va a reclamar el bloque móvil
-                        const targetCoords = groupIds.map(id => ({
-                            x: state.pieces[id].x + shiftX,
-                            y: state.pieces[id].y + shiftY
+                        // Mapeo Inmutable de Celdas de Destino que reclamará el bloque entrante
+                        const incomingTargetCells = groupIds.map(id => ({
+                            id: id,
+                            fromCx: state.pieces[id].currentGridX,
+                            fromCy: state.pieces[id].currentGridY,
+                            toCx: state.pieces[id].currentGridX + cellDeltaX,
+                            toCy: state.pieces[id].currentGridY + cellDeltaY
                         }));
 
-                        // 3. Filtrar de forma inmutable todas las piezas salientes usando el mapa congelado
-                        const outboundPieces = state.pieces.filter(p => 
+                        // Mapeo Inmutable de las Celdas Libres que dejará el bloque móvil original
+                        const sourceHoles = incomingTargetCells.map(c => ({ cx: c.fromCx, cy: c.fromCy }));
+
+                        // Identificar qué piezas (ajenas al bloque móvil) habitan en las zonas invadidas
+                        const displacedPieces = state.pieces.filter(p => 
                             !groupIds.includes(p.id) && 
-                            targetCoords.some(c => Math.abs(p.x - c.x) < 2 && Math.abs(p.y - c.y) < 2)
+                            incomingTargetCells.some(c => p.currentGridX === c.toCx && p.currentGridY === c.toCy)
                         );
 
-                        // 4. Mover el bloque entrante
-                        groupIds.forEach(id => {
-                            state.pieces[id].x += shiftX;
-                            state.pieces[id].y += shiftY;
-                            state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
-                            state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
+                        // PASO MAESTRO: Encontrar un destino uno-a-uno único en los "huecos de origen" para las piezas salientes
+                        displacedPieces.forEach((p) => {
+                            // Buscar un hueco libre de origen que NO vaya a ser reclamado por otra pieza saliente ya procesada
+                            const targetHoleIdx = sourceHoles.findIndex(hole => {
+                                // Verificar si alguna OTRA pieza saliente ya se agendó para este hueco
+                                return !displacedPieces.some(otherP => otherP !== p && otherP.nextGridX === hole.cx && otherP.nextGridY === hole.cy);
+                            });
+
+                            const chosenHole = sourceHoles.splice(targetHoleIdx, 1)[0];
+                            p.nextGridX = chosenHole.cx;
+                            p.nextGridY = chosenHole.cy;
                         });
 
-                        // 5. Desplazar exactamente todas las piezas salientes en reversa al hueco desalojado
-                        outboundPieces.forEach(p => {
-                            p.x -= shiftX;
-                            p.y -= shiftY;
+                        // Ejecutar traslación física y actualización simultánea en memoria del Bloque Móvil
+                        incomingTargetCells.forEach(cell => {
+                            const p = state.pieces[cell.id];
+                            p.currentGridX = cell.toCx;
+                            p.currentGridY = cell.toCy;
+                            p.x = p.currentGridX * pSize;
+                            p.y = p.currentGridY * pSize;
                             p.el.style.left = `${p.x}px`;
                             p.el.style.top = `${p.y}px`;
                         });
 
-                        // 6. CORRECCIÓN CLAVE: Destruir y reconstruir dinámicamente las uniones basadas en posiciones vigentes
+                        // Ejecutar traslación física y actualización simultánea en memoria de las Piezas Salientes
+                        displacedPieces.forEach(p => {
+                            p.currentGridX = p.nextGridX;
+                            p.currentGridY = p.nextGridY;
+                            delete p.nextGridX; // Limpieza de bandera temporal
+                            delete p.nextGridY;
+                            p.x = p.currentGridX * pSize;
+                            p.y = p.currentGridY * pSize;
+                            p.el.style.left = `${p.x}px`;
+                            p.el.style.top = `${p.y}px`;
+                        });
+
+                        // Reestructurar jerarquía de uniones y enlaces correctos de forma contigua
                         rebuildAllGroupsFromScratch();
 
-                        // Lanzar destello visual en las piezas del bloque movido si sigue habiendo enlaces sanos
+                        // Destello elegante sobre el bloque recién movido
                         groupIds.forEach(id => {
                             const el = state.pieces[id].el;
                             el.classList.remove('flash-active');
@@ -646,7 +674,7 @@
                         });
 
                     } else {
-                        // Fallback seguro: Reajustar a su lugar actual
+                        // Movimiento inválido o cancelado: Reversión elástica
                         groupIds.forEach(id => {
                             state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
                             state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
@@ -661,10 +689,8 @@
             window.addEventListener('pointerup', onPointerUp);
         }
 
-        // MOTOR RECONSTRUCTOR DE CAPAS DE GRUPOS EXCLUSIVO PARA INTERCAMBIO
         function rebuildAllGroupsFromScratch() {
             const pSize = 600 / state.size;
-            // Reiniciar todo a piezas sueltas individuales
             state.groups = state.pieces.map(p => [p.id]);
 
             let mergedAny = true;
@@ -683,7 +709,6 @@
                 }
             }
 
-            // Aplicar refresco de bordes visuales limpios a cada grupo resultante
             state.groups.forEach(g => hideInternalBorders(g));
         }
 
@@ -693,17 +718,17 @@
                     const p1 = state.pieces[id1];
                     const p2 = state.pieces[id2];
 
-                    const isHorizontalNeighbor = (Math.abs(p1.c - p2.c) === 1 && p1.r === p2.r);
-                    const isVerticalNeighbor = (Math.abs(p1.r - p2.r) === 1 && p1.c === p2.c);
+                    const isHorizontalNeighbor = (Math.abs(p1.origC - p2.origC) === 1 && p1.origR === p2.origR);
+                    const isVerticalNeighbor = (Math.abs(p1.origR - p2.origR) === 1 && p1.origC === p2.origC);
 
                     if (isHorizontalNeighbor || isVerticalNeighbor) {
-                        const expectedDx = (p1.c - p2.c) * pSize;
-                        const expectedDy = (p1.r - p2.r) * pSize;
-                        const currentDx = p1.x - p2.x;
-                        const currentDy = p1.y - p2.y;
+                        // Relación espacial actual exacta de celdas
+                        const expectedGridDx = p1.origC - p2.origC;
+                        const expectedGridDy = p1.origR - p2.origR;
+                        const currentGridDx = p1.currentGridX - p2.currentGridX;
+                        const currentGridDy = p1.currentGridY - p2.currentGridY;
 
-                        // Solo se fusionan si su distancia física actual equivale exactamente a su relación original
-                        if (Math.abs(currentDx - expectedDx) < 3 && Math.abs(currentDy - expectedDy) < 3) {
+                        if (expectedGridDx === currentGridDx && expectedGridDy === currentGridDy) {
                             return true;
                         }
                     }
@@ -728,13 +753,13 @@
                         const p1 = state.pieces[pId1];
                         const p2 = state.pieces[pId2];
 
-                        const isHorizontalNeighbor = (Math.abs(p1.c - p2.c) === 1 && p1.r === p2.r);
-                        const isVerticalNeighbor = (Math.abs(p1.r - p2.r) === 1 && p1.c === p2.c);
+                        const isHorizontalNeighbor = (Math.abs(p1.origC - p2.origC) === 1 && p1.origR === p2.origR);
+                        const isVerticalNeighbor = (Math.abs(p1.origR - p2.origR) === 1 && p1.origC === p2.origC);
 
                         if (!isHorizontalNeighbor && !isVerticalNeighbor) continue;
 
-                        const expectedDx = (p1.c - p2.c) * p1.el.offsetWidth;
-                        const expectedDy = (p1.r - p2.r) * p1.el.offsetHeight;
+                        const expectedDx = (p1.origC - p2.origC) * p1.el.offsetWidth;
+                        const expectedDy = (p1.origR - p2.origR) * p1.el.offsetHeight;
                         const currentDx = p1.x - p2.x;
                         const currentDy = p1.y - p2.y;
 
@@ -771,7 +796,6 @@
                 hideInternalBorders(finalGroup);
             }
 
-            // Fijar al marco base central en modo libre
             const activeGroupIdx = state.groups.findIndex(g => g.includes(currentGroup[0]));
             if (activeGroupIdx !== -1) {
                 const activeGroup = state.groups[activeGroupIdx];
@@ -798,9 +822,9 @@
         function checkVictoryCondition() {
             if (state.groups.length === 1) {
                 if (state.mode === 'intercambio') {
-                    // El puzzle está resuelto en intercambio solo si la pieza de origen regresó a su coordenada target absoluta
-                    const p = state.pieces[0];
-                    if (Math.abs(p.x - p.tx) > 2 || Math.abs(p.y - p.ty) > 2) return; 
+                    // Victoria perfecta: Cada pieza habita exactamente en su celda nativa original
+                    const puzzleIsBroken = state.pieces.some(p => p.currentGridX !== p.origC || p.currentGridY !== p.origR);
+                    if (puzzleIsBroken) return;
                 }
                 
                 stopTimer();
@@ -819,10 +843,10 @@
 
                 groupIds.forEach(id2 => {
                     const p2 = state.pieces[id2];
-                    if (p1.c === p2.c && p1.r - 1 === p2.r) topMatch = true;
-                    if (p1.c === p2.c && p1.r + 1 === p2.r) bottomMatch = true;
-                    if (p1.r === p2.r && p1.c - 1 === p2.c) leftMatch = true;
-                    if (p1.r === p2.r && p1.c + 1 === p2.c) rightMatch = true;
+                    if (p1.origC === p2.origC && p1.origR - 1 === p2.origR) topMatch = true;
+                    if (p1.origC === p2.origC && p1.origR + 1 === p2.origR) bottomMatch = true;
+                    if (p1.origR === p2.origR && p1.origC - 1 === p2.origC) leftMatch = true;
+                    if (p1.origR === p2.origR && p1.origC + 1 === p2.origC) rightMatch = true;
                 });
 
                 p1.el.style.borderTop = topMatch ? "1px solid transparent" : "1px solid rgba(255,255,255,0.25)";
