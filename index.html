@@ -42,12 +42,40 @@
             align-items: center;
             justify-content: center;
             width: 100%;
-            height: 100vh;
+            height: 100dvh;
+            min-height: 100vh;
             padding: 20px;
             position: absolute;
             top: 0; left: 0;
         }
         .screen.active { display: flex; }
+
+        #screen-menu {
+            justify-content: flex-start;
+            overflow-y: auto;
+            overscroll-behavior-y: contain;
+            padding-top: max(16px, env(safe-area-inset-top));
+            padding-bottom: max(22px, env(safe-area-inset-bottom));
+            gap: 8px;
+        }
+
+        #screen-menu .card {
+            flex-shrink: 0;
+            margin-bottom: 6px;
+        }
+
+        @media (min-height: 900px) {
+            #screen-menu { justify-content: center; }
+        }
+
+        @media (max-height: 820px) {
+            h1 { font-size: 1.75rem; }
+            .version-tag { margin-bottom: 10px; }
+            .card { padding: 16px; gap: 10px; }
+            .preview-box-container { max-width: 220px; }
+            .btn { padding: 10px; }
+            select, input[type="file"] { padding: 9px; }
+        }
 
         h1 { font-size: 2rem; margin-bottom: 5px; text-shadow: 0 4px 10px rgba(0,0,0,0.5); }
         .version-tag { font-size: 0.85rem; color: var(--accent-color); margin-bottom: 15px; font-weight: bold; letter-spacing: 1px; }
@@ -157,20 +185,15 @@
             cursor: grab;
             touch-action: none;
             box-shadow: 0 4px 8px rgba(0,0,0,0.4);
-            border: 1px solid rgba(255, 255, 255, 0.25);
+            --piece-border-color: rgba(255, 255, 255, 0.22);
+            border: 1px solid var(--piece-border-color);
+            background-clip: padding-box;
             will-change: top, left;
             transform: translate3d(0,0,0);
             -webkit-backface-visibility: hidden;
             backface-visibility: hidden;
         }
         .puzzle-piece:active { cursor: grabbing; z-index: 99999 !important; }
-
-        @keyframes flash-union {
-            0% { filter: brightness(1); box-shadow: 0 0 0px var(--accent-color); }
-            50% { filter: brightness(1.4); box-shadow: 0 0 20px var(--accent-color); }
-            100% { filter: brightness(1); box-shadow: 0 4px 8px rgba(0,0,0,0.4); }
-        }
-        .flash-active { animation: flash-union 0.3s ease-out; }
 
         #victory-layer {
             position: fixed;
@@ -443,6 +466,15 @@
             canvas.style.transform = `translate3d(${state.panX}px, ${state.panY}px, 0) scale(${state.zoom})`;
         }
 
+        function primePieceSnapTransition(pieceEl) {
+            pieceEl.style.transition = 'left 220ms cubic-bezier(0.22, 1.15, 0.36, 1), top 220ms cubic-bezier(0.22, 1.15, 0.36, 1)';
+            if (pieceEl.__snapTimer) clearTimeout(pieceEl.__snapTimer);
+            pieceEl.__snapTimer = setTimeout(() => {
+                pieceEl.style.transition = '';
+                pieceEl.__snapTimer = null;
+            }, 240);
+        }
+
         function initGameplay() {
             closeWebcam();
             state.size = parseInt(document.getElementById('cfg-size').value);
@@ -477,6 +509,7 @@
             canvas.innerHTML = '';
             const boardSize = 600; 
             const pSize = boardSize / state.size;
+            const seamOverlap = state.mode === 'intercambio' ? 0.75 : 0;
             
             const offsetX = state.mode === 'libre' ? (2000 - boardSize) / 2 : 0;
             const offsetY = state.mode === 'libre' ? (2000 - boardSize) / 2 : 0;
@@ -489,8 +522,8 @@
                 for(let c=0; c<state.size; c++) {
                     const piece = document.createElement('div');
                     piece.classList.add('puzzle-piece');
-                    piece.style.width = `${pSize}px`;
-                    piece.style.height = `${pSize}px`;
+                    piece.style.width = `${pSize + seamOverlap}px`;
+                    piece.style.height = `${pSize + seamOverlap}px`;
                     piece.style.backgroundImage = `url(${state.imgSrc})`;
                     piece.style.backgroundSize = `${boardSize}px ${boardSize}px`;
                     piece.style.backgroundPosition = `-${c * pSize}px -${r * pSize}px`;
@@ -551,42 +584,53 @@
             const groupIdx = state.groups.findIndex(g => g.includes(clickedPiece.id));
             const groupIds = [...state.groups[groupIdx]];
 
-            groupIds.forEach(id => canvas.appendChild(state.pieces[id].el));
+            groupIds.forEach(id => {
+                const el = state.pieces[id].el;
+                el.style.transition = '';
+                if (el.__snapTimer) {
+                    clearTimeout(el.__snapTimer);
+                    el.__snapTimer = null;
+                }
+                canvas.appendChild(el);
+            });
 
             const startX = e.clientX;
             const startY = e.clientY;
             const initialPos = groupIds.map(id => ({ id: id, x: state.pieces[id].x, y: state.pieces[id].y }));
             const pSize = 600 / state.size;
 
+            let minGridX = Infinity, maxGridX = -Infinity;
+            let minGridY = Infinity, maxGridY = -Infinity;
+
+            groupIds.forEach(id => {
+                const p = state.pieces[id];
+                if (p.currentGridX < minGridX) minGridX = p.currentGridX;
+                if (p.currentGridX > maxGridX) maxGridX = p.currentGridX;
+                if (p.currentGridY < minGridY) minGridY = p.currentGridY;
+                if (p.currentGridY > maxGridY) maxGridY = p.currentGridY;
+            });
+
+            const dragCellLimits = {
+                minX: -minGridX,
+                maxX: (state.size - 1) - maxGridX,
+                minY: -minGridY,
+                maxY: (state.size - 1) - maxGridY
+            };
+
+            const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
+
             function onPointerMove(ev) {
                 let dx = (ev.clientX - startX) / state.zoom;
                 let dy = (ev.clientY - startY) / state.zoom;
 
-                if (state.mode === 'intercambio') {
-                    let minGridX = Infinity, maxGridX = -Infinity;
-                    let minGridY = Infinity, maxGridY = -Infinity;
-
-                    groupIds.forEach(id => {
-                        const p = state.pieces[id];
-                        if (p.currentGridX < minGridX) minGridX = p.currentGridX;
-                        if (p.currentGridX > maxGridX) maxGridX = p.currentGridX;
-                        if (p.currentGridY < minGridY) minGridY = p.currentGridY;
-                        if (p.currentGridY > maxGridY) maxGridY = p.currentGridY;
-                    });
-
-                    const maxNegCellsX = -minGridX;
-                    const maxPosCellsX = (state.size - 1) - maxGridX;
-                    const maxNegCellsY = -minGridY;
-                    const maxPosCellsY = (state.size - 1) - maxGridY;
-
-                    dx = Math.max(maxNegCellsX * pSize, Math.min(dx, maxPosCellsX * pSize));
-                    dy = Math.max(maxNegCellsY * pSize, Math.min(dy, maxPosCellsY * pSize));
-                }
-
                 groupIds.forEach((id, idx) => {
                     const piece = state.pieces[id];
-                    piece.el.style.left = `${initialPos[idx].x + dx}px`;
-                    piece.el.style.top = `${initialPos[idx].y + dy}px`;
+                    const targetX = initialPos[idx].x + dx;
+                    const targetY = initialPos[idx].y + dy;
+                    const renderX = state.mode === 'intercambio' ? Math.round(targetX) : targetX;
+                    const renderY = state.mode === 'intercambio' ? Math.round(targetY) : targetY;
+                    piece.el.style.left = `${renderX}px`;
+                    piece.el.style.top = `${renderY}px`;
                 });
             }
 
@@ -606,9 +650,14 @@
                 } else {
                     const finalX = parseFloat(clickedPiece.el.style.left);
                     const finalY = parseFloat(clickedPiece.el.style.top);
-                    
-                    const cellDeltaX = Math.round((finalX - clickedPiece.x) / pSize);
-                    const cellDeltaY = Math.round((finalY - clickedPiece.y) / pSize);
+
+                    const requestedCellDeltaX = Math.round((finalX - clickedPiece.x) / pSize);
+                    const requestedCellDeltaY = Math.round((finalY - clickedPiece.y) / pSize);
+
+                    const cellDeltaX = clamp(requestedCellDeltaX, dragCellLimits.minX, dragCellLimits.maxX);
+                    const cellDeltaY = clamp(requestedCellDeltaY, dragCellLimits.minY, dragCellLimits.maxY);
+
+                    const snappedToBoard = (cellDeltaX !== requestedCellDeltaX || cellDeltaY !== requestedCellDeltaY);
 
                     let moveIsValid = (cellDeltaX !== 0 || cellDeltaY !== 0);
 
@@ -624,6 +673,10 @@
                     }
 
                     if (moveIsValid) {
+                        if (snappedToBoard) {
+                            groupIds.forEach(id => primePieceSnapTransition(state.pieces[id].el));
+                        }
+
                         // PASO 1: Simular y guardar las futuras posiciones estables del bloque móvil
                         const incomingTargetCells = groupIds.map(id => ({
                             id: id,
@@ -696,16 +749,15 @@
                         // PASO 6: Recálculo absoluto de uniones lógicas estables
                         rebuildAllGroupsFromScratch();
 
-                        groupIds.forEach(id => {
-                            const el = state.pieces[id].el;
-                            el.classList.remove('flash-active');
-                            void el.offsetWidth; 
-                            el.classList.add('flash-active');
-                        });
+                        const mergedGroup = state.groups.find(g => g.includes(clickedPiece.id));
+                        if (mergedGroup && mergedGroup.length > groupIds.length) {
+                            pulseGroupOutline(mergedGroup);
+                        }
 
                     } else {
                         // Resorte elástico si no se completa un movimiento de grilla entero
                         groupIds.forEach(id => {
+                            primePieceSnapTransition(state.pieces[id].el);
                             state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
                             state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
                         });
@@ -739,6 +791,24 @@
             }
 
             state.groups.forEach(g => hideInternalBorders(g));
+        }
+
+        function pulseGroupOutline(groupIds) {
+            const pulseColor = 'rgba(187, 134, 252, 0.95)';
+            hideInternalBorders(groupIds, pulseColor);
+
+            groupIds.forEach(id => {
+                const el = state.pieces[id].el;
+                el.style.transition = 'filter 340ms cubic-bezier(0.16, 1, 0.3, 1)';
+                el.style.filter = 'brightness(1.12) saturate(1.08)';
+
+                if (el.__borderPulseTimer) clearTimeout(el.__borderPulseTimer);
+                el.__borderPulseTimer = setTimeout(() => {
+                    el.style.filter = '';
+                    hideInternalBorders(groupIds);
+                    el.__borderPulseTimer = null;
+                }, 360);
+            });
         }
 
         function canMergeGroupsIntercambio(g1, g2) {
@@ -816,12 +886,7 @@
 
             if (unionFound) {
                 const finalGroup = state.groups.find(g => g.includes(currentGroup[0]));
-                finalGroup.forEach(id => {
-                    const el = state.pieces[id].el;
-                    el.classList.remove('flash-active');
-                    void el.offsetWidth; 
-                    el.classList.add('flash-active');
-                });
+                pulseGroupOutline(finalGroup);
                 hideInternalBorders(finalGroup);
             }
 
@@ -864,23 +929,30 @@
             }
         }
 
-        function hideInternalBorders(groupIds) {
+        function hideInternalBorders(groupIds, pulseOuterColor = null) {
+            const isMultiPiece = groupIds.length > 1;
+            const normalOuterBorder = isMultiPiece ? "0px solid transparent" : "1px solid rgba(255,255,255,0.22)";
+            const pulseOuterBorder = pulseOuterColor ? `1px solid ${pulseOuterColor}` : normalOuterBorder;
+
             groupIds.forEach(id1 => {
                 const p1 = state.pieces[id1];
                 let topMatch = false, bottomMatch = false, leftMatch = false, rightMatch = false;
 
                 groupIds.forEach(id2 => {
                     const p2 = state.pieces[id2];
-                    if (p1.origC === p2.origC && p1.origR - 1 === p2.origR) topMatch = true;
-                    if (p1.origC === p2.origC && p1.origR + 1 === p2.origR) bottomMatch = true;
-                    if (p1.origR === p2.origR && p1.origC - 1 === p2.origC) leftMatch = true;
-                    if (p1.origR === p2.origR && p1.origC + 1 === p2.origC) rightMatch = true;
+                    if (p1.currentGridX === p2.currentGridX && p1.currentGridY - 1 === p2.currentGridY) topMatch = true;
+                    if (p1.currentGridX === p2.currentGridX && p1.currentGridY + 1 === p2.currentGridY) bottomMatch = true;
+                    if (p1.currentGridY === p2.currentGridY && p1.currentGridX - 1 === p2.currentGridX) leftMatch = true;
+                    if (p1.currentGridY === p2.currentGridY && p1.currentGridX + 1 === p2.currentGridX) rightMatch = true;
                 });
 
-                p1.el.style.borderTop = topMatch ? "1px solid transparent" : "1px solid rgba(255,255,255,0.25)";
-                p1.el.style.borderBottom = bottomMatch ? "1px solid transparent" : "1px solid rgba(255,255,255,0.25)";
-                p1.el.style.borderLeft = leftMatch ? "1px solid transparent" : "1px solid rgba(255,255,255,0.25)";
-                p1.el.style.borderRight = rightMatch ? "1px solid transparent" : "1px solid rgba(255,255,255,0.25)";
+                p1.el.style.borderTop = topMatch ? "0px solid transparent" : pulseOuterBorder;
+                p1.el.style.borderBottom = bottomMatch ? "0px solid transparent" : pulseOuterBorder;
+                p1.el.style.borderLeft = leftMatch ? "0px solid transparent" : pulseOuterBorder;
+                p1.el.style.borderRight = rightMatch ? "0px solid transparent" : pulseOuterBorder;
+
+                const hasInternalContact = topMatch || bottomMatch || leftMatch || rightMatch;
+                p1.el.style.boxShadow = hasInternalContact ? "none" : "0 4px 8px rgba(0,0,0,0.4)";
             });
         }
 
