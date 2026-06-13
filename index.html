@@ -519,7 +519,6 @@
                     canvas.appendChild(p.el);
                 });
             } else {
-                // Modo Intercambio Fijo: Barajar posiciones manteniendo la rejilla intacta
                 const gridPositions = state.pieces.map(p => ({ x: p.tx, y: p.ty }));
                 for (let i = gridPositions.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
@@ -532,6 +531,7 @@
                     p.el.style.top = `${p.y}px`;
                     canvas.appendChild(p.el);
                 });
+                rebuildAllGroupsFromScratch(); // Inicializar bordes internos y estados de grupo
             }
 
             state.pieces.forEach(p => {
@@ -575,12 +575,11 @@
                         state.pieces[id].x = parseFloat(state.pieces[id].el.style.left);
                         state.pieces[id].y = parseFloat(state.pieces[id].el.style.top);
                     });
-                    checkGroupUnions(groupIdx);
+                    checkGroupUnionslibre(groupIdx);
                 } else {
-                    // SOLUCIÓN MATEMÁTICA DEFINITIVA AL MÓDULO DE INTERCAMBIO (SWAP POR BLOQUES MULTI-PIEZA)
+                    // MÓDULO INTERCAMBIO MEJORADO Y BLINDADO ANTIBUGS
                     const pSize = 600 / state.size;
                     
-                    // 1. Detectar el delta (distancia en celdas de matriz) según el arrastre de la pieza líder
                     const finalX = parseFloat(clickedPiece.el.style.left);
                     const finalY = parseFloat(clickedPiece.el.style.top);
                     
@@ -592,33 +591,34 @@
 
                     let moveIsValid = (cellDeltaX !== 0 || cellDeltaY !== 0);
 
-                    // 2. Verificar que NINGUNA pieza del bloque se salga de la frontera (0 a 600px) al aplicar el desplazamiento
                     if (moveIsValid) {
                         for (let id of groupIds) {
                             const nextX = state.pieces[id].x + shiftX;
                             const nextY = state.pieces[id].y + shiftY;
-                            if (nextX < 0 || nextX >= 600 || nextY < 0 || nextY >= 600) {
+                            if (nextX < 0 || nextX >= 599 || nextY < 0 || nextY >= 599) {
                                 moveIsValid = false;
                                 break;
                             }
                         }
                     }
 
-                    // 3. Si es válido, ejecutar la permutación en espejo e intercambio exacto de siluetas
                     if (moveIsValid) {
-                        // Mapear qué coordenadas X,Y exactas va a ocupar nuestro bloque entrante
+                        // 1. Clonar mapa del tablero de forma estática antes de desplazar nada (Previene el desajuste de bucles)
+                        const currentBoardMap = state.pieces.map(p => ({ id: p.id, x: p.x, y: p.y }));
+
+                        // 2. Definir las coordenadas destino que va a reclamar el bloque móvil
                         const targetCoords = groupIds.map(id => ({
                             x: state.pieces[id].x + shiftX,
                             y: state.pieces[id].y + shiftY
                         }));
 
-                        // Identificar todas las piezas salientes que habitan ese espacio exacto de destino
+                        // 3. Filtrar de forma inmutable todas las piezas salientes usando el mapa congelado
                         const outboundPieces = state.pieces.filter(p => 
                             !groupIds.includes(p.id) && 
                             targetCoords.some(c => Math.abs(p.x - c.x) < 2 && Math.abs(p.y - c.y) < 2)
                         );
 
-                        // Mover el bloque al hueco objetivo
+                        // 4. Mover el bloque entrante
                         groupIds.forEach(id => {
                             state.pieces[id].x += shiftX;
                             state.pieces[id].y += shiftY;
@@ -626,7 +626,7 @@
                             state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
                         });
 
-                        // Desplazar las piezas salientes en reversa al hueco vacío que dejó el bloque
+                        // 5. Desplazar exactamente todas las piezas salientes en reversa al hueco desalojado
                         outboundPieces.forEach(p => {
                             p.x -= shiftX;
                             p.y -= shiftY;
@@ -634,19 +634,26 @@
                             p.el.style.top = `${p.y}px`;
                         });
 
-                        // Revaluar uniones grupales en cadena para todos los elementos afectados
-                        checkGroupUnions(state.groups.findIndex(g => g.includes(clickedPiece.id)));
-                        outboundPieces.forEach(p => {
-                            checkGroupUnions(state.groups.findIndex(g => g.includes(p.id)));
+                        // 6. CORRECCIÓN CLAVE: Destruir y reconstruir dinámicamente las uniones basadas en posiciones vigentes
+                        rebuildAllGroupsFromScratch();
+
+                        // Lanzar destello visual en las piezas del bloque movido si sigue habiendo enlaces sanos
+                        groupIds.forEach(id => {
+                            const el = state.pieces[id].el;
+                            el.classList.remove('flash-active');
+                            void el.offsetWidth; 
+                            el.classList.add('flash-active');
                         });
 
                     } else {
-                        // Cancelado: Devolver bloque a su coordenada segura actual sin romper nada
+                        // Fallback seguro: Reajustar a su lugar actual
                         groupIds.forEach(id => {
                             state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
                             state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
                         });
                     }
+                    
+                    checkVictoryCondition();
                 }
             }
 
@@ -654,12 +661,62 @@
             window.addEventListener('pointerup', onPointerUp);
         }
 
-        function checkGroupUnions(currentGroupIdx) {
-            if (currentGroupIdx === -1) return;
+        // MOTOR RECONSTRUCTOR DE CAPAS DE GRUPOS EXCLUSIVO PARA INTERCAMBIO
+        function rebuildAllGroupsFromScratch() {
+            const pSize = 600 / state.size;
+            // Reiniciar todo a piezas sueltas individuales
+            state.groups = state.pieces.map(p => [p.id]);
+
+            let mergedAny = true;
+            while (mergedAny) {
+                mergedAny = false;
+                for (let i = 0; i < state.groups.length; i++) {
+                    for (let j = i + 1; j < state.groups.length; j++) {
+                        if (canMergeGroupsIntercambio(state.groups[i], state.groups[j], pSize)) {
+                            state.groups[i] = state.groups[i].concat(state.groups[j]);
+                            state.groups.splice(j, 1);
+                            mergedAny = true;
+                            break;
+                        }
+                    }
+                    if (mergedAny) break;
+                }
+            }
+
+            // Aplicar refresco de bordes visuales limpios a cada grupo resultante
+            state.groups.forEach(g => hideInternalBorders(g));
+        }
+
+        function canMergeGroupsIntercambio(g1, g2, pSize) {
+            for (let id1 of g1) {
+                for (let id2 of g2) {
+                    const p1 = state.pieces[id1];
+                    const p2 = state.pieces[id2];
+
+                    const isHorizontalNeighbor = (Math.abs(p1.c - p2.c) === 1 && p1.r === p2.r);
+                    const isVerticalNeighbor = (Math.abs(p1.r - p2.r) === 1 && p1.c === p2.c);
+
+                    if (isHorizontalNeighbor || isVerticalNeighbor) {
+                        const expectedDx = (p1.c - p2.c) * pSize;
+                        const expectedDy = (p1.r - p2.r) * pSize;
+                        const currentDx = p1.x - p2.x;
+                        const currentDy = p1.y - p2.y;
+
+                        // Solo se fusionan si su distancia física actual equivale exactamente a su relación original
+                        if (Math.abs(currentDx - expectedDx) < 3 && Math.abs(currentDy - expectedDy) < 3) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function checkGroupUnionslibre(currentGroupIdx) {
             let currentGroup = state.groups[currentGroupIdx];
             if (!currentGroup) return;
             
-            const tolerance = state.mode === 'libre' ? 24 : 5; 
+            const tolerance = 24; 
             let unionFound = false;
 
             for (let i = 0; i < state.groups.length; i++) {
@@ -682,7 +739,6 @@
                         const currentDy = p1.y - p2.y;
 
                         if (Math.abs(currentDx - expectedDx) < tolerance && Math.abs(currentDy - expectedDy) < tolerance) {
-                            
                             const shiftX = p2.x + expectedDx - p1.x;
                             const shiftY = p2.y + expectedDy - p1.y;
 
@@ -715,35 +771,36 @@
                 hideInternalBorders(finalGroup);
             }
 
-            if (state.mode === 'libre') {
-                const activeGroupIdx = state.groups.findIndex(g => g.includes(currentGroup[0]));
-                if (activeGroupIdx !== -1) {
-                    const activeGroup = state.groups[activeGroupIdx];
-                    const checkPiece = state.pieces[activeGroup[0]];
-                    const distToTarget = Math.hypot(checkPiece.x - checkPiece.tx, checkPiece.y - checkPiece.ty);
-                    
-                    if(distToTarget < tolerance) {
-                        const shiftX = checkPiece.tx - checkPiece.x;
-                        const shiftY = checkPiece.ty - checkPiece.y;
+            // Fijar al marco base central en modo libre
+            const activeGroupIdx = state.groups.findIndex(g => g.includes(currentGroup[0]));
+            if (activeGroupIdx !== -1) {
+                const activeGroup = state.groups[activeGroupIdx];
+                const checkPiece = state.pieces[activeGroup[0]];
+                const distToTarget = Math.hypot(checkPiece.x - checkPiece.tx, checkPiece.y - checkPiece.ty);
+                
+                if(distToTarget < tolerance) {
+                    const shiftX = checkPiece.tx - checkPiece.x;
+                    const shiftY = checkPiece.ty - checkPiece.y;
 
-                        activeGroup.forEach(id => {
-                            const p = state.pieces[id];
-                            p.x += shiftX; p.y += shiftY;
-                            p.el.style.left = `${p.tx}px`;
-                            p.el.style.top = `${p.ty}px`;
-                            p.el.style.boxShadow = "none";
-                            p.el.style.border = "none"; 
-                        });
-                    }
+                    activeGroup.forEach(id => {
+                        const p = state.pieces[id];
+                        p.x += shiftX; p.y += shiftY;
+                        p.el.style.left = `${p.tx}px`;
+                        p.el.style.top = `${p.ty}px`;
+                        p.el.style.boxShadow = "none";
+                        p.el.style.border = "none"; 
+                    });
                 }
             }
+            checkVictoryCondition();
+        }
 
-            // CONDICIÓN DE VICTORIA TOTAL REVISADA
+        function checkVictoryCondition() {
             if (state.groups.length === 1) {
                 if (state.mode === 'intercambio') {
-                    // Validar que la pieza 0 esté en su lugar correcto de origen para confirmar el orden real completo
+                    // El puzzle está resuelto en intercambio solo si la pieza de origen regresó a su coordenada target absoluta
                     const p = state.pieces[0];
-                    if (p.x !== p.tx || p.y !== p.ty) return; 
+                    if (Math.abs(p.x - p.tx) > 2 || Math.abs(p.y - p.ty) > 2) return; 
                 }
                 
                 stopTimer();
