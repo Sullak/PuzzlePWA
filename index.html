@@ -116,7 +116,6 @@
         }
         #webcam { display: none; transform: scaleX(-1); }
 
-        /* ÁREA DE JUEGO ULTRA-ESTABLE */
         #game-header {
             width: 100%;
             position: absolute;
@@ -138,7 +137,6 @@
             touch-action: none;
         }
 
-        /* Optimizado a 2000px para eliminar parpadeos por completo */
         #pan-zoom-canvas {
             position: absolute;
             width: 2000px;
@@ -207,12 +205,11 @@
     <div id="screen-menu" class="screen active">
         <h1>Puzzle Master Pro</h1>
         <div class="card">
-            
             <div class="control-group">
                 <label>Modo de Juego</label>
                 <select id="cfg-mode">
-                    <option value="libre" selected>Lienzo Libre (Clásico)</option>
-                    <option value="intercambio">Intercambio Fijo (Estilo Solitario)</option>
+                    <option value="libre">Lienzo Libre (Clásico)</option>
+                    <option value="intercambio" selected>Intercambio Fijo (Estilo Solitario)</option>
                 </select>
             </div>
 
@@ -263,7 +260,7 @@
 
     <script>
         const state = {
-            mode: 'libre', // 'libre' o 'intercambio'
+            mode: 'intercambio',
             size: 4,
             imgSrc: 'https://picsum.photos/600/600',
             pieces: [], 
@@ -367,7 +364,7 @@
             let startZoom = 1;
 
             viewport.addEventListener('wheel', (e) => {
-                if (state.mode === 'intercambio') return; // Bloquear zoom en modo intercambio
+                if (state.mode === 'intercambio') return; 
                 e.preventDefault();
                 const zoomFactor = state.zoom * 0.15;
                 let nextZoom = e.deltaY < 0 ? state.zoom + zoomFactor : state.zoom - zoomFactor;
@@ -457,8 +454,7 @@
                 state.panX = (window.innerWidth - (2000 * state.zoom)) / 2;
                 state.panY = (window.innerHeight - (600 * state.zoom)) / 3;
             } else {
-                zoomIndicator.innerHTML = "Modo Intercambio: Arrastra una pieza sobre otra para permutarlas";
-                // Centrado matemático perfecto del tablero fijo
+                zoomIndicator.innerHTML = "Modo Intercambio Fijo: Desplaza el bloque para permutar la forma exacta";
                 state.zoom = Math.min(window.innerWidth / 620, window.innerHeight / 720, 1);
                 state.panX = (window.innerWidth - (600 * state.zoom)) / 2;
                 state.panY = (window.innerHeight - (600 * state.zoom)) / 2 + 30;
@@ -480,14 +476,12 @@
             const boardSize = 600; 
             const pSize = boardSize / state.size;
             
-            // Si es libre usa el centro del lienzo de 2000px, si es intercambio empieza en (0,0) del canvas
             const offsetX = state.mode === 'libre' ? (2000 - boardSize) / 2 : 0;
             const offsetY = state.mode === 'libre' ? (2000 - boardSize) / 2 : 0;
 
             state.pieces = [];
             state.groups = [];
 
-            // 1. Crear piezas en sus posiciones objetivo correctas
             let index = 0;
             for(let r=0; r<state.size; r++) {
                 for(let c=0; c<state.size; c++) {
@@ -506,16 +500,14 @@
                         el: piece, id: index,
                         r: r, c: c,
                         tx: targetX, ty: targetY,
-                        x: targetX, y: targetY // Inicialmente asignados aquí
+                        x: targetX, y: targetY
                     });
                     state.groups.push([index]);
                     index++;
                 }
             }
 
-            // 2. Dispersar/Barajar según el modo de juego elegido
             if (state.mode === 'libre') {
-                // CORRECCIÓN: Gran grupo único y aleatorio alrededor del tablero central
                 state.pieces.forEach(p => {
                     const angle = Math.random() * Math.PI * 2;
                     const distance = 350 + Math.random() * 300; 
@@ -527,9 +519,8 @@
                     canvas.appendChild(p.el);
                 });
             } else {
-                // Modo Intercambio: Posiciones de rejilla ordenadas pero con IDs de piezas totalmente mezcladas
+                // Modo Intercambio Fijo: Barajar posiciones manteniendo la rejilla intacta
                 const gridPositions = state.pieces.map(p => ({ x: p.tx, y: p.ty }));
-                // Algoritmo de barajado Fisher-Yates
                 for (let i = gridPositions.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
                     [gridPositions[i], gridPositions[j]] = [gridPositions[j], gridPositions[i]];
@@ -555,7 +546,6 @@
             const groupIdx = state.groups.findIndex(g => g.includes(clickedPiece.id));
             const groupIds = state.groups[groupIdx];
 
-            // Traer bloque adelante
             groupIds.forEach(id => canvas.appendChild(state.pieces[id].el));
 
             const startX = e.clientX;
@@ -581,44 +571,54 @@
                 document.getElementById('txt-moves').textContent = state.moves;
 
                 if (state.mode === 'libre') {
-                    // Guardar posiciones finales arrastradas
                     groupIds.forEach(id => {
                         state.pieces[id].x = parseFloat(state.pieces[id].el.style.left);
                         state.pieces[id].y = parseFloat(state.pieces[id].el.style.top);
                     });
                     checkGroupUnions(groupIdx);
                 } else {
-                    // MÓDULO DE INTERCAMBIO (SWAP)
-                    // Detectar qué pieza/bloque está debajo del dedo al soltar
-                    const releaseX = ev.clientX;
-                    const releaseY = ev.clientY;
+                    // SOLUCIÓN MATEMÁTICA DEFINITIVA AL MÓDULO DE INTERCAMBIO (SWAP POR BLOQUES MULTI-PIEZA)
+                    const pSize = 600 / state.size;
                     
-                    let targetPiece = null;
-                    // Buscar la pieza más cercana al punto de liberación que NO pertenezca al grupo que movemos
-                    for (let p of state.pieces) {
-                        if (groupIds.includes(p.id)) continue;
-                        const rect = p.el.getBoundingClientRect();
-                        if (releaseX >= rect.left && releaseX <= rect.right && releaseY >= rect.top && releaseY <= rect.bottom) {
-                            targetPiece = p;
-                            break;
+                    // 1. Detectar el delta (distancia en celdas de matriz) según el arrastre de la pieza líder
+                    const finalX = parseFloat(clickedPiece.el.style.left);
+                    const finalY = parseFloat(clickedPiece.el.style.top);
+                    
+                    const cellDeltaX = Math.round((finalX - clickedPiece.x) / pSize);
+                    const cellDeltaY = Math.round((finalY - clickedPiece.y) / pSize);
+
+                    const shiftX = cellDeltaX * pSize;
+                    const shiftY = cellDeltaY * pSize;
+
+                    let moveIsValid = (cellDeltaX !== 0 || cellDeltaY !== 0);
+
+                    // 2. Verificar que NINGUNA pieza del bloque se salga de la frontera (0 a 600px) al aplicar el desplazamiento
+                    if (moveIsValid) {
+                        for (let id of groupIds) {
+                            const nextX = state.pieces[id].x + shiftX;
+                            const nextY = state.pieces[id].y + shiftY;
+                            if (nextX < 0 || nextX >= 600 || nextY < 0 || nextY >= 600) {
+                                moveIsValid = false;
+                                break;
+                            }
                         }
                     }
 
-                    if (targetPiece) {
-                        // Encontrar el grupo completo de la pieza destino
-                        const targetGroupIdx = state.groups.findIndex(g => g.includes(targetPiece.id));
-                        const targetGroupIds = state.groups[targetGroupIdx];
+                    // 3. Si es válido, ejecutar la permutación en espejo e intercambio exacto de siluetas
+                    if (moveIsValid) {
+                        // Mapear qué coordenadas X,Y exactas va a ocupar nuestro bloque entrante
+                        const targetCoords = groupIds.map(id => ({
+                            x: state.pieces[id].x + shiftX,
+                            y: state.pieces[id].y + shiftY
+                        }));
 
-                        // Calcular vectores de desplazamiento mutuo entre bloques
-                        const sourceCenterX = clickedPiece.x;
-                        const sourceCenterY = clickedPiece.y;
-                        const targetCenterX = targetPiece.x;
-                        const targetCenterY = targetPiece.y;
+                        // Identificar todas las piezas salientes que habitan ese espacio exacto de destino
+                        const outboundPieces = state.pieces.filter(p => 
+                            !groupIds.includes(p.id) && 
+                            targetCoords.some(c => Math.abs(p.x - c.x) < 2 && Math.abs(p.y - c.y) < 2)
+                        );
 
-                        const shiftX = targetCenterX - sourceCenterX;
-                        const shiftY = targetCenterY - sourceCenterY;
-
-                        // Mover piezas de origen a destino
+                        // Mover el bloque al hueco objetivo
                         groupIds.forEach(id => {
                             state.pieces[id].x += shiftX;
                             state.pieces[id].y += shiftY;
@@ -626,19 +626,22 @@
                             state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
                         });
 
-                        // Mover piezas de destino a origen
-                        targetGroupIds.forEach(id => {
-                            state.pieces[id].x -= shiftX;
-                            state.pieces[id].y -= shiftY;
-                            state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
-                            state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
+                        // Desplazar las piezas salientes en reversa al hueco vacío que dejó el bloque
+                        outboundPieces.forEach(p => {
+                            p.x -= shiftX;
+                            p.y -= shiftY;
+                            p.el.style.left = `${p.x}px`;
+                            p.el.style.top = `${p.y}px`;
                         });
 
-                        // Verificar uniones para ambos bloques permutados
+                        // Revaluar uniones grupales en cadena para todos los elementos afectados
                         checkGroupUnions(state.groups.findIndex(g => g.includes(clickedPiece.id)));
-                        checkGroupUnions(state.groups.findIndex(g => g.includes(targetPiece.id)));
+                        outboundPieces.forEach(p => {
+                            checkGroupUnions(state.groups.findIndex(g => g.includes(p.id)));
+                        });
+
                     } else {
-                        // Si se suelta en la nada, regresar el bloque a su lugar de origen
+                        // Cancelado: Devolver bloque a su coordenada segura actual sin romper nada
                         groupIds.forEach(id => {
                             state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
                             state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
@@ -653,10 +656,9 @@
 
         function checkGroupUnions(currentGroupIdx) {
             if (currentGroupIdx === -1) return;
-            const currentGroup = state.groups[currentGroupIdx];
+            let currentGroup = state.groups[currentGroupIdx];
             if (!currentGroup) return;
             
-            // Tolerancia ajustada: estricta en intercambio, flexible en libre
             const tolerance = state.mode === 'libre' ? 24 : 5; 
             let unionFound = false;
 
@@ -713,7 +715,6 @@
                 hideInternalBorders(finalGroup);
             }
 
-            // En modo libre, ajustar a las coordenadas meta finales del tablero
             if (state.mode === 'libre') {
                 const activeGroupIdx = state.groups.findIndex(g => g.includes(currentGroup[0]));
                 if (activeGroupIdx !== -1) {
@@ -737,12 +738,12 @@
                 }
             }
 
-            // CONDICIÓN DE VICTORIA TOTAL
+            // CONDICIÓN DE VICTORIA TOTAL REVISADA
             if (state.groups.length === 1) {
-                // En modo intercambio, asegurar que el bloque completo esté en el origen correcto
                 if (state.mode === 'intercambio') {
+                    // Validar que la pieza 0 esté en su lugar correcto de origen para confirmar el orden real completo
                     const p = state.pieces[0];
-                    if (p.x !== p.tx || p.y !== p.ty) return; // Debe estar ordenado correctamente
+                    if (p.x !== p.tx || p.y !== p.ty) return; 
                 }
                 
                 stopTimer();
