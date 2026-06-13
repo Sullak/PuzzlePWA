@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Puzzle Master Pro - v1.3.0</title>
+    <title>Puzzle Master Pro - v1.3.1</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1a1a">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -205,7 +205,7 @@
 
     <div id="screen-menu" class="screen active">
         <h1>Puzzle Master Pro</h1>
-        <div class="version-tag">v1.3.0 - Rigid Matrix</div>
+        <div class="version-tag">v1.3.1 - Isolation Layer</div>
         <div class="card">
             <div class="control-group">
                 <label>Modo de Juego</label>
@@ -456,7 +456,7 @@
                 state.panX = (window.innerWidth - (2000 * state.zoom)) / 2;
                 state.panY = (window.innerHeight - (600 * state.zoom)) / 3;
             } else {
-                zoomIndicator.innerHTML = "Intercambio Rígido v1.3: Desplazamiento simétrico de siluetas limitadas.";
+                zoomIndicator.innerHTML = "Intercambio v1.3.1: Aislamiento transaccional estricto de celdas.";
                 state.zoom = Math.min(window.innerWidth / 620, window.innerHeight / 720, 1);
                 state.panX = (window.innerWidth - (600 * state.zoom)) / 2;
                 state.panY = (window.innerHeight - (600 * state.zoom)) / 2 + 30;
@@ -549,7 +549,8 @@
             e.preventDefault();
             
             const groupIdx = state.groups.findIndex(g => g.includes(clickedPiece.id));
-            const groupIds = state.groups[groupIdx];
+            // COPIA INMUTABLE: Aislamos los IDs del bloque movil ANTES de cualquier mutacion o fusion
+            const groupIds = [...state.groups[groupIdx]];
 
             groupIds.forEach(id => canvas.appendChild(state.pieces[id].el));
 
@@ -563,7 +564,6 @@
                 let dy = (ev.clientY - startY) / state.zoom;
 
                 if (state.mode === 'intercambio') {
-                    // REGLA 5 MODIFICADA: Límites rígidos durante el arrastre en tiempo real
                     let minGridX = Infinity, maxGridX = -Infinity;
                     let minGridY = Infinity, maxGridY = -Infinity;
 
@@ -575,13 +575,11 @@
                         if (p.currentGridY > maxGridY) maxGridY = p.currentGridY;
                     });
 
-                    // Límites permitidos de desplazamiento en celdas para el bloque líder
                     const maxNegCellsX = -minGridX;
                     const maxPosCellsX = (state.size - 1) - maxGridX;
                     const maxNegCellsY = -minGridY;
                     const maxPosCellsY = (state.size - 1) - maxGridY;
 
-                    // Restringir el delta x e y en base a la frontera física rígida
                     dx = Math.max(maxNegCellsX * pSize, Math.min(dx, maxPosCellsX * pSize));
                     dy = Math.max(maxNegCellsY * pSize, Math.min(dy, maxPosCellsY * pSize));
                 }
@@ -607,7 +605,6 @@
                     });
                     checkGroupUnionslibre(groupIdx);
                 } else {
-                    // NUEVO MOTOR MATRICIAL SIMÉTRICO TRANSACCIONAL (v1.3.0)
                     const finalX = parseFloat(clickedPiece.el.style.left);
                     const finalY = parseFloat(clickedPiece.el.style.top);
                     
@@ -616,7 +613,6 @@
 
                     let moveIsValid = (cellDeltaX !== 0 || cellDeltaY !== 0);
 
-                    // Re-verificación de seguridad de fronteras estrictas
                     if (moveIsValid) {
                         for (let id of groupIds) {
                             const nX = state.pieces[id].currentGridX + cellDeltaX;
@@ -629,7 +625,7 @@
                     }
 
                     if (moveIsValid) {
-                        // 1. Mapear las celdas de destino exactas que reclamará el bloque de ida
+                        // PASO 1: Congelar la instantánea de celdas destino ocupadas por la silueta entrante
                         const incomingTargetCells = groupIds.map(id => ({
                             id: id,
                             fromCx: state.pieces[id].currentGridX,
@@ -638,19 +634,19 @@
                             toCy: state.pieces[id].currentGridY + cellDeltaY
                         }));
 
-                        // 2. Identificar qué piezas ocupan la silueta invadida en el destino
+                        // PASO 2: Identificar las piezas desalojadas usando exclusión estricta sobre la copia estática
                         const displacedPieces = state.pieces.filter(p => 
                             !groupIds.includes(p.id) && 
                             incomingTargetCells.some(c => p.currentGridX === c.toCx && p.currentGridY === c.toCy)
                         );
 
-                        // 3. REGLA 1 REPLANTEADA: Traslación simétrica exacta invertida (-cellDelta) para las salientes
+                        // PASO 3: Traslación simétrica exacta inversa sobre la memoria transaccional
                         displacedPieces.forEach(p => {
                             p.nextGridX = p.currentGridX - cellDeltaX;
                             p.nextGridY = p.currentGridY - cellDeltaY;
                         });
 
-                        // 4. Aplicar los cambios lógicos y físicos en masa simultáneamente
+                        // PASO 4: Asentamiento simultáneo y renderizado físico coordinado
                         incomingTargetCells.forEach(cell => {
                             const p = state.pieces[cell.id];
                             p.currentGridX = cell.toCx;
@@ -672,10 +668,9 @@
                             p.el.style.top = `${p.y}px`;
                         });
 
-                        // 5. REGLA 3 & 4: Romper uniones viejas y calcular los nuevos bloques basados en las posiciones finales estables
+                        // PASO 5: Capa de aislamiento total. El escaneo de adyacencias ocurre sobre una matriz estática y limpia.
                         rebuildAllGroupsFromScratch();
 
-                        // Destello visual de retroalimentación
                         groupIds.forEach(id => {
                             const el = state.pieces[id].el;
                             el.classList.remove('flash-active');
@@ -684,7 +679,7 @@
                         });
 
                     } else {
-                        // Cancelación elástica limpia si no cambió de celda
+                        // Reversión elástica segura si no hubo cambio neto de casilla
                         groupIds.forEach(id => {
                             state.pieces[id].el.style.left = `${state.pieces[id].x}px`;
                             state.pieces[id].el.style.top = `${state.pieces[id].y}px`;
@@ -700,7 +695,7 @@
         }
 
         function rebuildAllGroupsFromScratch() {
-            const pSize = 600 / state.size;
+            // Inicializar cada pieza en su propio grupo atómico
             state.groups = state.pieces.map(p => [p.id]);
 
             let mergedAny = true;
@@ -708,7 +703,7 @@
                 mergedAny = false;
                 for (let i = 0; i < state.groups.length; i++) {
                     for (let j = i + 1; j < state.groups.length; j++) {
-                        if (canMergeGroupsIntercambio(state.groups[i], state.groups[j], pSize)) {
+                        if (canMergeGroupsIntercambio(state.groups[i], state.groups[j])) {
                             state.groups[i] = state.groups[i].concat(state.groups[j]);
                             state.groups.splice(j, 1);
                             mergedAny = true;
@@ -722,18 +717,21 @@
             state.groups.forEach(g => hideInternalBorders(g));
         }
 
-        function canMergeGroupsIntercambio(g1, g2, pSize) {
+        function canMergeGroupsIntercambio(g1, g2) {
             for (let id1 of g1) {
                 for (let id2 of g2) {
                     const p1 = state.pieces[id1];
                     const p2 = state.pieces[id2];
 
+                    // Comprobar vecindad nativa en la imagen original
                     const isHorizontalNeighbor = (Math.abs(p1.origC - p2.origC) === 1 && p1.origR === p2.origR);
                     const isVerticalNeighbor = (Math.abs(p1.origR - p2.origR) === 1 && p1.origC === p2.origC);
 
                     if (isHorizontalNeighbor || isVerticalNeighbor) {
                         const expectedGridDx = p1.origC - p2.origC;
                         const expectedGridDy = p1.origR - p2.origR;
+                        
+                        // Comparar directamente con la posición actual en la grilla matemática
                         const currentGridDx = p1.currentGridX - p2.currentGridX;
                         const currentGridDy = p1.currentGridY - p2.currentGridY;
 
